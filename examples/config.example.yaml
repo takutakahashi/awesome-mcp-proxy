@@ -1,0 +1,25 @@
+location:
+  provider: k8s # only k8s is supported for now
+auth:
+  provider: local
+  local:
+    filePath: path/to/localconfig.yaml
+servers:
+  - name: github
+    type: stdio
+    command: ""
+    args: []
+    env: {}
+    envFrom:
+      - awsSecretManager:
+          arn: hogehoge
+          awsProfile: mydiv # or
+          credentialFile: /path/to/.aws/credentials
+  - name: prom
+    type: stdio
+    command: ""
+    args: []
+    env: {}
+    envFrom:
+      - kubernetesSecret:
+          name: mydiv-prom-secret

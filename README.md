@@ -4,16 +4,14 @@ Remote MCP Server proxy by a single endpoint with authn/authz
 
 ## Overview
 
-This is a boilerplate implementation of an MCP (Model Context Protocol) server using Go and the official MCP SDK with HTTP/SSE transport support.
+This is a boilerplate implementation of an MCP (Model Context Protocol) server using Go and the official MCP SDK with Streamable HTTP transport support.
 
 ## Features
 
-- **HTTP/SSE Transport**: Server-Sent Events based transport for real-time communication
+- **Streamable HTTP Transport**: Latest MCP protocol version (2025-03-26) with HTTP-based transport
 - **Example Tools**: Pre-configured example tools (echo, add)
 - **Example Resources**: Static resources with different content types
 - **Example Prompts**: Template prompts with arguments
-- **Health Check**: Built-in health check endpoint
-- **CORS Support**: Cross-Origin Resource Sharing enabled
 - **Graceful Shutdown**: Proper signal handling for clean server shutdown
 
 ## Quick Start
@@ -43,8 +41,10 @@ go build -o awesome-mcp-proxy .
 ./awesome-mcp-proxy
 
 # Run with custom port
-./awesome-mcp-proxy -port 3000
+./awesome-mcp-proxy -port :3000
 ```
+
+The server will be accessible at `http://localhost:8080/mcp` (or your specified port).
 
 ### Development Mode
 
@@ -57,12 +57,13 @@ go run main.go
 
 ### MCP Protocol Endpoints
 
-- **POST /sse** - Server-Sent Events endpoint for MCP protocol
-- **POST /message** - Message endpoint for sending requests to the server
+- **POST /mcp** - Main MCP endpoint using Streamable HTTP transport
 
-### Utility Endpoints
-
-- **GET /health** - Health check endpoint
+The server implements the MCP protocol version 2025-03-26 with Streamable HTTP transport, which provides:
+- Bi-directional communication over HTTP
+- Support for chunked transfer encoding
+- Progressive message delivery
+- Better scalability than SSE-based transport
 
 ## Example Tools
 

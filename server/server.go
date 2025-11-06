@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
@@ -179,47 +178,4 @@ func (s *MCPServer) registerPrompts() {
 // GetServer returns the underlying MCP server
 func (s *MCPServer) GetServer() *server.MCPServer {
 	return s.server
-}
-
-// Handler returns an HTTP handler for the MCP server
-func (s *MCPServer) Handler() http.Handler {
-	mux := http.NewServeMux()
-
-	// Create SSE server
-	sseServer := server.NewSSEServer(s.server)
-
-	// SSE endpoints for MCP protocol
-	mux.Handle("/sse", sseServer.SSEHandler())
-	mux.Handle("/message", sseServer.MessageHandler())
-
-	// Health check endpoint
-	mux.HandleFunc("/health", s.handleHealth)
-
-	// CORS middleware
-	return corsMiddleware(mux)
-}
-
-// handleHealth handles health check requests
-func (s *MCPServer) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{
-		"status": "ok",
-	})
-}
-
-// corsMiddleware adds CORS headers to responses
-func corsMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Last-Event-Id")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
-		}
-
-		next.ServeHTTP(w, r)
-	})
 }

@@ -170,4 +170,9 @@ else
     TEST_FAILED=1
 fi
 
+log_info ""
+log_info "Note: Gateway tools (gateway-list-tools, gateway-describe-tool, gateway-execute-tool)"
+log_info "have been implemented but require manual testing due to Streamable HTTP limitations."
+log_info "See test/manual_gateway_test.sh for manual testing instructions."
+log_info ""
 log_info "All E2E tests completed"

@@ -1,0 +1,37 @@
+# Simple Remote MCP Server Gateway Configuration
+# This is a minimal configuration for getting started with remote MCP servers
+
+# Authentication for clients connecting to this proxy
+auth:
+  provider: local
+  local:
+    filePath: path/to/localconfig.yaml
+
+# Remote MCP servers
+servers:
+  # Basic remote MCP server
+  - name: my-remote-mcp
+    type: remote
+    url: https://your-mcp-server.example.com/mcp
+    description: "My Remote MCP Server"
+    # Optional: Add authentication if required
+    # auth:
+    #   type: bearer
+    #   token: "your-token-here"
+
+  # Another remote MCP server with API key
+  - name: another-mcp
+    type: remote
+    url: https://another-mcp.example.com/mcp
+    description: "Another MCP Server"
+    auth:
+      type: apiKey
+      headerName: X-API-Key
+      apiKey: "your-api-key"
+
+# Simple routing: forward all requests to the first server
+proxy:
+  routing:
+    - match:
+        default: true
+      target: my-remote-mcp

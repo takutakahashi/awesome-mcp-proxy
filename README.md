@@ -141,7 +141,79 @@ Note: Streamable HTTP transport is stateless. For full session testing, use the 
 
 ## Configuration
 
-See `examples/config.example.yaml` for configuration examples.
+### Gateway Mode
+
+awesome-mcp-proxy can act as a gateway to remote MCP servers, allowing you to:
+- Connect to multiple remote MCP servers through a single endpoint
+- Add authentication and authorization layers
+- Implement load balancing, caching, and rate limiting
+- Route requests based on tools, resources, or custom rules
+
+#### Quick Start with Gateway Mode
+
+1. **Simple Configuration**
+
+   See `examples/config.gateway-simple.yaml` for a minimal configuration:
+
+   ```yaml
+   auth:
+     provider: local
+     local:
+       filePath: path/to/localconfig.yaml
+
+   servers:
+     - name: my-remote-mcp
+       type: remote
+       url: https://your-mcp-server.example.com/mcp
+       auth:
+         type: bearer
+         token: "your-token-here"
+
+   proxy:
+     routing:
+       - match:
+           default: true
+         target: my-remote-mcp
+   ```
+
+2. **Advanced Configuration**
+
+   See `examples/config.gateway.yaml` for comprehensive examples including:
+   - Multiple authentication methods (Bearer, API Key, Basic Auth)
+   - Load balancing across multiple servers
+   - Circuit breaker and retry policies
+   - Health checks and monitoring
+   - Request routing based on tool names or resource URIs
+
+#### Configuration Examples
+
+- `examples/config.example.yaml` - Original example with stdio servers
+- `examples/config.gateway-simple.yaml` - Simple remote MCP server gateway
+- `examples/config.gateway.yaml` - Advanced gateway with all features
+
+#### Supported Remote Server Features
+
+- **Authentication Types:**
+  - Bearer Token
+  - API Key
+  - Basic Authentication
+  - Token from environment variables
+  - Token from AWS Secrets Manager
+  - Token from Kubernetes Secrets
+
+- **Transport Protocols:**
+  - HTTP/HTTPS (Streamable HTTP)
+  - Server-Sent Events (SSE)
+
+- **Advanced Features:**
+  - Load balancing (round-robin, weighted, random)
+  - Health checks and automatic failover
+  - Request/response caching
+  - Rate limiting
+  - Circuit breaker pattern
+  - Request routing based on tool/resource patterns
+  - Monitoring and metrics (Prometheus)
+  - Distributed tracing (Jaeger)
 
 ## Built With
 

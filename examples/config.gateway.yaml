@@ -1,0 +1,192 @@
+# Remote MCP Server Gateway Configuration
+# This configuration allows awesome-mcp-proxy to act as a gateway to remote MCP servers
+
+# Location configuration - where the proxy server is deployed
+location:
+  provider: k8s # Kubernetes deployment (can be: k8s, local, cloud)
+
+# Authentication configuration for clients connecting to this proxy
+auth:
+  provider: local
+  local:
+    filePath: path/to/localconfig.yaml
+    # Example localconfig.yaml:
+    # users:
+    #   - username: user1
+    #     password: hashed_password
+    #     apiKey: api_key_value
+
+# Remote MCP servers configuration
+servers:
+  # Example 1: Basic HTTP remote MCP server
+  - name: remote-mcp-1
+    type: remote
+    url: https://mcp-server-1.example.com/mcp
+    description: "Production MCP Server 1"
+    # Optional: Authentication for the remote server
+    auth:
+      type: bearer
+      token: "your-bearer-token-here"
+    # Optional: Custom headers
+    headers:
+      X-Custom-Header: "custom-value"
+      User-Agent: "awesome-mcp-proxy/0.1.0"
+
+  # Example 2: Remote MCP server with API key authentication
+  - name: remote-mcp-2
+    type: remote
+    url: https://mcp-server-2.example.com/mcp
+    description: "Development MCP Server"
+    auth:
+      type: apiKey
+      headerName: X-API-Key
+      apiKey: "your-api-key-here"
+
+  # Example 3: Remote MCP server with basic authentication
+  - name: remote-mcp-3
+    type: remote
+    url: https://mcp-server-3.example.com/mcp
+    description: "Testing MCP Server"
+    auth:
+      type: basic
+      username: "admin"
+      password: "secure-password"
+
+  # Example 4: Remote MCP server without authentication
+  - name: public-mcp
+    type: remote
+    url: https://public-mcp-server.example.com/mcp
+    description: "Public MCP Server"
+
+  # Example 5: Remote MCP server with SSE endpoint
+  - name: remote-mcp-sse
+    type: remote
+    url: https://mcp-server-sse.example.com/sse
+    description: "MCP Server with SSE support"
+    transport: sse # Options: http (default), sse
+    auth:
+      type: bearer
+      token: "sse-server-token"
+
+  # Example 6: Remote MCP server with environment variables
+  - name: remote-mcp-env
+    type: remote
+    url: https://mcp-server-env.example.com/mcp
+    description: "MCP Server with env-based auth"
+    auth:
+      type: bearer
+      tokenFrom:
+        env: MCP_SERVER_TOKEN # Read token from environment variable
+    # Or use secrets from AWS Secrets Manager
+    authFrom:
+      awsSecretManager:
+        arn: "arn:aws:secretsmanager:region:account:secret:mcp-token"
+        awsProfile: "default"
+        credentialFile: "/path/to/.aws/credentials"
+
+  # Example 7: Remote MCP server with Kubernetes secret
+  - name: remote-mcp-k8s
+    type: remote
+    url: https://mcp-server-k8s.example.com/mcp
+    description: "MCP Server with K8s secret"
+    authFrom:
+      kubernetesSecret:
+        name: "mcp-server-secret"
+        namespace: "default" # Optional, defaults to current namespace
+        keys:
+          token: "bearer-token" # Use 'bearer-token' key from secret
+
+  # Example 8: Multiple remote servers with load balancing
+  - name: remote-mcp-cluster
+    type: remote
+    description: "Load-balanced MCP Server cluster"
+    # Multiple endpoints for load balancing
+    endpoints:
+      - url: https://mcp-server-1.example.com/mcp
+        weight: 2 # Higher weight = more traffic
+      - url: https://mcp-server-2.example.com/mcp
+        weight: 1
+      - url: https://mcp-server-3.example.com/mcp
+        weight: 1
+    auth:
+      type: bearer
+      token: "cluster-token"
+    # Load balancing strategy
+    loadBalancing:
+      strategy: weighted-round-robin # Options: round-robin, weighted-round-robin, random, least-connections
+    # Health check configuration
+    healthCheck:
+      enabled: true
+      interval: 30s # Check every 30 seconds
+      timeout: 5s
+      path: "/health" # Health check endpoint
+
+  # Example 9: Remote MCP server with retry and timeout configuration
+  - name: remote-mcp-resilient
+    type: remote
+    url: https://mcp-server-resilient.example.com/mcp
+    description: "MCP Server with resilience configuration"
+    # Timeout configuration
+    timeout:
+      connect: 10s
+      read: 30s
+      write: 30s
+    # Retry configuration
+    retry:
+      maxAttempts: 3
+      backoff: exponential # Options: linear, exponential
+      initialDelay: 1s
+      maxDelay: 10s
+    # Circuit breaker configuration
+    circuitBreaker:
+      enabled: true
+      threshold: 5 # Open circuit after 5 consecutive failures
+      timeout: 60s # Try again after 60 seconds
+    auth:
+      type: bearer
+      token: "resilient-token"
+
+# Global proxy configuration
+proxy:
+  # Request forwarding rules
+  routing:
+    # Route based on tool names
+    - match:
+        tool: "github.*" # Regex pattern
+      target: remote-mcp-1
+    - match:
+        tool: "prometheus.*"
+      target: remote-mcp-2
+    # Route based on resource URIs
+    - match:
+        resource: "file://.*"
+      target: remote-mcp-3
+    # Default route
+    - match:
+        default: true
+      target: public-mcp
+
+  # Caching configuration
+  cache:
+    enabled: true
+    ttl: 300s # Cache responses for 5 minutes
+    maxSize: 100MB
+
+  # Rate limiting
+  rateLimit:
+    enabled: true
+    requestsPerSecond: 100
+    burst: 200
+
+  # Monitoring and logging
+  monitoring:
+    metrics:
+      enabled: true
+      endpoint: /metrics # Prometheus metrics endpoint
+    tracing:
+      enabled: true
+      provider: jaeger
+      endpoint: http://jaeger:14268/api/traces
+    logging:
+      level: info # Options: debug, info, warn, error
+      format: json # Options: json, text

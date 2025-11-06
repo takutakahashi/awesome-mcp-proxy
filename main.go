@@ -1,48 +1,36 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"log"
-	"os"
-	"os/signal"
-	"syscall"
-	"time"
+	"net/http"
 
-	"github.com/mark3labs/mcp-go/server"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	mcpserver "github.com/takutakahashi/awesome-mcp-proxy/server"
 )
 
 func main() {
-	port := flag.String("port", ":8080", "Port to listen on (e.g., :8080)")
+	addr := flag.String("addr", ":8080", "Address to listen on (e.g., :8080)")
 	flag.Parse()
 
 	// Create MCP server
 	mcpServer := mcpserver.NewMCPServer()
 
-	// Create HTTP server with streamable transport
-	httpServer := server.NewStreamableHTTPServer(mcpServer.GetServer())
+	// Create HTTP handler with streamable transport
+	handler := mcp.NewStreamableHTTPHandler(
+		func(r *http.Request) *mcp.Server {
+			return mcpServer.GetServer()
+		},
+		nil,
+	)
 
-	// Handle shutdown gracefully
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	// Set up HTTP server
+	http.Handle("/mcp", handler)
 
-	go func() {
-		<-sigChan
-		log.Println("Shutting down server...")
+	log.Printf("MCP HTTP Server starting on %s/mcp", *addr)
+	log.Printf("Using official MCP Go SDK with Streamable HTTP transport")
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := httpServer.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Error during shutdown: %v", err)
-		}
-	}()
-
-	log.Printf("MCP HTTP Server starting on %s/mcp", *port)
-	if err := httpServer.Start(*port); err != nil {
+	if err := http.ListenAndServe(*addr, nil); err != nil {
 		log.Fatalf("Server error: %v", err)
 	}
-
-	log.Println("Server stopped")
 }

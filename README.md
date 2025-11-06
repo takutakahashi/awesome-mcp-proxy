@@ -4,7 +4,7 @@ Remote MCP Server proxy by a single endpoint with authn/authz
 
 ## Overview
 
-This is a boilerplate implementation of an MCP (Model Context Protocol) server using Go and the official MCP SDK with Streamable HTTP transport support.
+This is a boilerplate implementation of an MCP (Model Context Protocol) server using Go and the **official Model Context Protocol Go SDK** (`github.com/modelcontextprotocol/go-sdk`) with Streamable HTTP transport support.
 
 ## Features
 
@@ -37,14 +37,14 @@ go build -o awesome-mcp-proxy .
 ### Running the Server
 
 ```bash
-# Run with default port (8080)
+# Run with default address (:8080)
 ./awesome-mcp-proxy
 
-# Run with custom port
-./awesome-mcp-proxy -port :3000
+# Run with custom address
+./awesome-mcp-proxy -addr :3000
 ```
 
-The server will be accessible at `http://localhost:8080/mcp` (or your specified port).
+The server will be accessible at `http://localhost:8080/mcp` (or your specified address).
 
 ### Development Mode
 
@@ -124,7 +124,7 @@ See `examples/config.example.yaml` for configuration examples.
 
 ## Built With
 
-- [mark3labs/mcp-go](https://github.com/mark3labs/mcp-go) - Official Go implementation of the Model Context Protocol
+- [modelcontextprotocol/go-sdk](https://github.com/modelcontextprotocol/go-sdk) - Official Go SDK for Model Context Protocol (maintained in collaboration with Google)
 
 ## License
 

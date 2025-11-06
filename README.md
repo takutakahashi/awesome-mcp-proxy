@@ -58,12 +58,15 @@ go run main.go
 ### MCP Protocol Endpoints
 
 - **POST /mcp** - Main MCP endpoint using Streamable HTTP transport
+- **POST /sse** - Server-Sent Events endpoint for session-based communication
 
 The server implements the MCP protocol version 2025-03-26 with Streamable HTTP transport, which provides:
 - Bi-directional communication over HTTP
 - Support for chunked transfer encoding
 - Progressive message delivery
 - Better scalability than SSE-based transport
+
+Note: The SSE endpoint is also available for compatibility and testing purposes.
 
 ## Example Tools
 
@@ -117,6 +120,24 @@ A friendly greeting prompt.
 ├── go.mod               # Go module definition
 └── README.md            # This file
 ```
+
+## Testing
+
+### Running E2E Tests
+
+The project includes end-to-end tests that verify the MCP server functionality:
+
+```bash
+# Run all E2E tests
+./test/e2e.sh
+```
+
+The E2E test suite validates:
+- Server initialization and capabilities
+- Protocol version compatibility
+- Error handling and malformed requests
+
+Note: Streamable HTTP transport is stateless. For full session testing, use the SSE endpoint.
 
 ## Configuration
 

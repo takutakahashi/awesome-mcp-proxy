@@ -17,7 +17,15 @@ func main() {
 	mcpServer := mcpserver.NewMCPServer()
 
 	// Create HTTP handler with streamable transport
-	handler := mcp.NewStreamableHTTPHandler(
+	streamHandler := mcp.NewStreamableHTTPHandler(
+		func(r *http.Request) *mcp.Server {
+			return mcpServer.GetServer()
+		},
+		nil,
+	)
+
+	// Create SSE handler for testing and compatibility
+	sseHandler := mcp.NewSSEHandler(
 		func(r *http.Request) *mcp.Server {
 			return mcpServer.GetServer()
 		},
@@ -25,7 +33,8 @@ func main() {
 	)
 
 	// Set up HTTP server
-	http.Handle("/mcp", handler)
+	http.Handle("/mcp", streamHandler)
+	http.Handle("/sse", sseHandler)
 
 	log.Printf("MCP HTTP Server starting on %s/mcp", *addr)
 	log.Printf("Using official MCP Go SDK with Streamable HTTP transport")

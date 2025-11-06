@@ -5,17 +5,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/takutakahashi/awesome-mcp-proxy/config"
 )
 
 // MCPServer represents an MCP server with HTTP transport
 type MCPServer struct {
-	server *mcp.Server
+	server  *mcp.Server
+	config  *config.Config
+	clients map[string]*RemoteMCPClient
 }
 
 // NewMCPServer creates a new MCP server instance
-func NewMCPServer() *MCPServer {
+func NewMCPServer(cfg *config.Config) *MCPServer {
 	// Create MCP server with basic information
 	server := mcp.NewServer(
 		&mcp.Implementation{
@@ -26,14 +30,26 @@ func NewMCPServer() *MCPServer {
 	)
 
 	mcpServer := &MCPServer{
-		server: server,
+		server:  server,
+		config:  cfg,
+		clients: make(map[string]*RemoteMCPClient),
+	}
+
+	// Initialize remote clients
+	if cfg != nil {
+		for _, gw := range cfg.Gateways {
+			mcpServer.clients[gw.Name] = NewRemoteMCPClient(gw.URL)
+			log.Printf("Initialized gateway client for %s (%s)", gw.Name, gw.URL)
+		}
 	}
 
 	// Register example tools
 	mcpServer.registerTools()
 
-	// Register gateway tools
-	mcpServer.registerGatewayTools()
+	// Register gateway tools from config
+	if cfg != nil {
+		mcpServer.registerGatewayToolsFromConfig()
+	}
 
 	// Register example resources
 	mcpServer.registerResources()
@@ -108,140 +124,138 @@ func (s *MCPServer) registerTools() {
 	log.Println("Registered tools: echo, add")
 }
 
-// registerGatewayTools registers gateway tools for proxying to remote MCP servers
-func (s *MCPServer) registerGatewayTools() {
-	// Gateway: List tools from remote server
-	listToolsTool := &mcp.Tool{
-		Name:        "gateway-list-tools",
-		Description: "Lists all available tools from a remote MCP server",
+// registerGatewayToolsFromConfig registers tools from configured gateways with prefixes
+func (s *MCPServer) registerGatewayToolsFromConfig() {
+	if s.config == nil || len(s.config.Gateways) == 0 {
+		log.Println("No gateways configured")
+		return
 	}
 
-	mcp.AddTool(s.server, listToolsTool, func(ctx context.Context, request *mcp.CallToolRequest, params GatewayListToolsParams) (*mcp.CallToolResult, any, error) {
-		if params.RemoteURL == "" {
-			return nil, nil, fmt.Errorf("remote_url is required")
+	// Use a context with timeout to avoid hanging forever
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	totalTools := 0
+
+	for _, gw := range s.config.Gateways {
+		client := s.clients[gw.Name]
+		if client == nil {
+			log.Printf("Warning: client not initialized for gateway %s", gw.Name)
+			continue
 		}
 
-		client := NewRemoteMCPClient(params.RemoteURL)
+		log.Printf("Fetching tools from gateway %s at %s...", gw.Name, gw.URL)
+
+		// Get tools from remote server
 		tools, err := client.ListTools(ctx)
 		if err != nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: fmt.Sprintf("Error listing tools: %v", err),
-					},
-				},
-				IsError: true,
-			}, nil, nil
+			log.Printf("Warning: failed to list tools from gateway %s: %v", gw.Name, err)
+			continue
 		}
 
-		// Format tools as JSON
-		toolsJSON, err := json.MarshalIndent(tools, "", "  ")
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal tools: %w", err)
+		// Register each tool with prefix
+		for _, remoteTool := range tools {
+			s.registerGatewayTool(gw, remoteTool)
+			totalTools++
 		}
 
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: fmt.Sprintf("Remote MCP server tools:\n%s", string(toolsJSON)),
-				},
-			},
-		}, nil, nil
-	})
-
-	// Gateway: Describe a specific tool
-	describeToolTool := &mcp.Tool{
-		Name:        "gateway-describe-tool",
-		Description: "Gets detailed information about a specific tool from a remote MCP server",
+		log.Printf("Registered %d tools from gateway %s with prefix: %s", len(tools), gw.Name, gw.Prefix)
 	}
 
-	mcp.AddTool(s.server, describeToolTool, func(ctx context.Context, request *mcp.CallToolRequest, params GatewayDescribeToolParams) (*mcp.CallToolResult, any, error) {
-		if params.RemoteURL == "" {
-			return nil, nil, fmt.Errorf("remote_url is required")
-		}
-		if params.ToolName == "" {
-			return nil, nil, fmt.Errorf("tool_name is required")
-		}
+	if totalTools > 0 {
+		log.Printf("Successfully registered %d gateway tools from %d gateway(s)", totalTools, len(s.config.Gateways))
+	} else {
+		log.Printf("No gateway tools registered (0 from %d gateway(s))", len(s.config.Gateways))
+	}
+}
 
-		client := NewRemoteMCPClient(params.RemoteURL)
-		tools, err := client.ListTools(ctx)
-		if err != nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: fmt.Sprintf("Error listing tools: %v", err),
-					},
-				},
-				IsError: true,
-			}, nil, nil
-		}
+// GatewayToolParams represents parameters for a gateway tool (dynamic arguments)
+type GatewayToolParams struct {
+	// Arguments will be passed as-is to the remote tool
+	Arguments map[string]interface{} `json:"-"`
+}
 
-		// Find the requested tool
-		var targetTool *mcp.Tool
-		for _, tool := range tools {
-			if tool.Name == params.ToolName {
-				targetTool = &tool
-				break
-			}
-		}
+// registerGatewayTool registers a single tool from a gateway
+func (s *MCPServer) registerGatewayTool(gw config.Gateway, remoteTool mcp.Tool) {
+	gatewayName := gw.Name
+	prefix := gw.Prefix
+	client := s.clients[gatewayName]
 
-		if targetTool == nil {
-			return &mcp.CallToolResult{
-				Content: []mcp.Content{
-					&mcp.TextContent{
-						Text: fmt.Sprintf("Tool '%s' not found on remote server", params.ToolName),
-					},
-				},
-				IsError: true,
-			}, nil, nil
-		}
-
-		// Format tool details as JSON
-		toolJSON, err := json.MarshalIndent(targetTool, "", "  ")
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to marshal tool: %w", err)
-		}
-
-		return &mcp.CallToolResult{
-			Content: []mcp.Content{
-				&mcp.TextContent{
-					Text: fmt.Sprintf("Tool details:\n%s", string(toolJSON)),
-				},
-			},
-		}, nil, nil
-	})
-
-	// Gateway: Execute a tool on remote server
-	executeToolTool := &mcp.Tool{
-		Name:        "gateway-execute-tool",
-		Description: "Executes a tool on a remote MCP server and returns the result",
+	// Create tool with prefixed name
+	tool := &mcp.Tool{
+		Name:        prefix + remoteTool.Name,
+		Description: fmt.Sprintf("[Gateway: %s] %s", gatewayName, remoteTool.Description),
+		InputSchema: remoteTool.InputSchema,
 	}
 
-	mcp.AddTool(s.server, executeToolTool, func(ctx context.Context, request *mcp.CallToolRequest, params GatewayExecuteToolParams) (*mcp.CallToolResult, any, error) {
-		if params.RemoteURL == "" {
-			return nil, nil, fmt.Errorf("remote_url is required")
-		}
-		if params.ToolName == "" {
-			return nil, nil, fmt.Errorf("tool_name is required")
-		}
-
-		client := NewRemoteMCPClient(params.RemoteURL)
-		result, err := client.CallTool(ctx, params.ToolName, params.Arguments)
+	// Use a dynamic handler that forwards to the remote server
+	originalToolName := remoteTool.Name
+	mcp.AddTool(s.server, tool, func(ctx context.Context, request *mcp.CallToolRequest, params map[string]interface{}) (*mcp.CallToolResult, any, error) {
+		// Forward the call to the remote server
+		result, err := client.CallTool(ctx, originalToolName, params)
 		if err != nil {
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{
 					&mcp.TextContent{
-						Text: fmt.Sprintf("Error executing tool: %v", err),
+						Text: fmt.Sprintf("Error calling remote tool: %v", err),
 					},
 				},
 				IsError: true,
 			}, nil, nil
 		}
-
 		return result, nil, nil
 	})
+}
 
-	log.Println("Registered gateway tools: gateway-list-tools, gateway-describe-tool, gateway-execute-tool")
+// GetAllGatewayTools retrieves all tools from all configured gateways with prefixes
+func (s *MCPServer) GetAllGatewayTools(ctx context.Context) ([]mcp.Tool, error) {
+	var allTools []mcp.Tool
+
+	if s.config == nil {
+		return allTools, nil
+	}
+
+	for _, gw := range s.config.Gateways {
+		client := s.clients[gw.Name]
+		if client == nil {
+			continue
+		}
+
+		tools, err := client.ListTools(ctx)
+		if err != nil {
+			log.Printf("Warning: failed to list tools from gateway %s: %v", gw.Name, err)
+			continue
+		}
+
+		// Add prefix to each tool name
+		for _, tool := range tools {
+			tool.Name = gw.Prefix + tool.Name
+			allTools = append(allTools, tool)
+		}
+	}
+
+	return allTools, nil
+}
+
+// FindGatewayForTool finds the gateway and original tool name for a prefixed tool
+func (s *MCPServer) FindGatewayForTool(toolName string) (*RemoteMCPClient, string, error) {
+	if s.config == nil {
+		return nil, "", fmt.Errorf("no gateways configured")
+	}
+
+	for _, gw := range s.config.Gateways {
+		if len(toolName) > len(gw.Prefix) && toolName[:len(gw.Prefix)] == gw.Prefix {
+			// Found matching prefix
+			originalName := toolName[len(gw.Prefix):]
+			client := s.clients[gw.Name]
+			if client == nil {
+				return nil, "", fmt.Errorf("gateway client not initialized: %s", gw.Name)
+			}
+			return client, originalName, nil
+		}
+	}
+
+	return nil, "", fmt.Errorf("no gateway found for tool: %s", toolName)
 }
 
 // registerResources registers example resources

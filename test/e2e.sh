@@ -171,8 +171,9 @@ else
 fi
 
 log_info ""
-log_info "Note: Gateway tools (gateway-list-tools, gateway-describe-tool, gateway-execute-tool)"
-log_info "have been implemented but require manual testing due to Streamable HTTP limitations."
-log_info "See test/manual_gateway_test.sh for manual testing instructions."
+log_info "Note: Gateway functionality has been implemented."
+log_info "Configuration: Use config.yaml with gateway definitions"
+log_info "Example: test/gateway-config.yaml shows how to configure remote MCP servers"
+log_info "Gateway tools will be prefixed according to config (e.g., remote_echo, remote_add)"
 log_info ""
 log_info "All E2E tests completed"

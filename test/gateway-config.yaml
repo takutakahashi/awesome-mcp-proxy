@@ -1,0 +1,5 @@
+# Test configuration for gateway E2E tests
+gateways:
+  - name: remote1
+    url: http://localhost:9000/mcp
+    prefix: remote_

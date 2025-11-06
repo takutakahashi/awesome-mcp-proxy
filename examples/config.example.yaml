@@ -1,25 +1,11 @@
-location:
-  provider: k8s # only k8s is supported for now
-auth:
-  provider: local
-  local:
-    filePath: path/to/localconfig.yaml
-servers:
-  - name: github
-    type: stdio
-    command: ""
-    args: []
-    env: {}
-    envFrom:
-      - awsSecretManager:
-          arn: hogehoge
-          awsProfile: mydiv # or
-          credentialFile: /path/to/.aws/credentials
-  - name: prom
-    type: stdio
-    command: ""
-    args: []
-    env: {}
-    envFrom:
-      - kubernetesSecret:
-          name: mydiv-prom-secret
+# Gateway configuration for remote MCP servers
+gateways:
+  # Example: Connect to a remote MCP server
+  - name: remote1
+    url: http://localhost:9000/mcp
+    prefix: remote1_
+
+  # Example: Connect to another remote MCP server
+  - name: remote2
+    url: http://localhost:9001/mcp
+    prefix: remote2_

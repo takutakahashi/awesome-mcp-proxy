@@ -25,6 +25,7 @@ type RemoteMCPClient struct {
 type remoteSession struct {
 	initialized bool
 	serverInfo  *mcp.Implementation
+	sessionID   string
 }
 
 // MCPRequest represents a JSON-RPC request
@@ -70,17 +71,25 @@ func (c *RemoteMCPClient) makeRequest(ctx context.Context, method string, params
 		Params:  params,
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	requestData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL, bytes.NewBuffer(requestData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Add session ID if available
+	c.mu.RLock()
+	sessionID := c.session.sessionID
+	c.mu.RUnlock()
+	if sessionID != "" {
+		req.Header.Set("Mcp-Session-Id", sessionID)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -92,6 +101,13 @@ func (c *RemoteMCPClient) makeRequest(ctx context.Context, method string, params
 		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
+	// Capture session ID if present
+	if sessionID := resp.Header.Get("Mcp-Session-Id"); sessionID != "" {
+		c.mu.Lock()
+		c.session.sessionID = sessionID
+		c.mu.Unlock()
+	}
+
 	// Read response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -100,19 +116,26 @@ func (c *RemoteMCPClient) makeRequest(ctx context.Context, method string, params
 
 	// Handle SSE format (lines starting with "data: ")
 	bodyStr := string(body)
-	if strings.HasPrefix(bodyStr, "data: ") {
-		lines := strings.Split(bodyStr, "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "data: ") {
-				body = []byte(strings.TrimPrefix(line, "data: "))
-				break
-			}
+	lines := strings.Split(bodyStr, "\n")
+	var jsonData []byte
+
+	// Look for the data line in SSE format
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "data: ") {
+			jsonData = []byte(strings.TrimPrefix(line, "data: "))
+			break
 		}
 	}
 
+	// If no SSE format found, try to parse body directly
+	if jsonData == nil {
+		jsonData = body
+	}
+
 	var mcpResp MCPResponse
-	if err := json.Unmarshal(body, &mcpResp); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	if err := json.Unmarshal(jsonData, &mcpResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w (body: %s)", err, string(jsonData))
 	}
 
 	if mcpResp.Error != nil {

@@ -13,14 +13,6 @@ on:
         - production
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
-    paths:
-    - 'test/e2e.sh'
-    - 'test/**'
-    - 'main.go'
-    - 'server/**'
-    - 'cmd/**'
 
 jobs:
   e2e-tests:

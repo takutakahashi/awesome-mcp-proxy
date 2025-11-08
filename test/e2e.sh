@@ -59,7 +59,7 @@ go build -o awesome-mcp-proxy . || {
 
 # Start the server
 log_info "Starting server on port ${SERVER_PORT}..."
-./awesome-mcp-proxy -addr ":${SERVER_PORT}" > /tmp/mcp-server.log 2>&1 &
+./awesome-mcp-proxy serve -a ":${SERVER_PORT}" > /tmp/mcp-server.log 2>&1 &
 SERVER_PID=$!
 
 # Wait for server to start
@@ -196,7 +196,7 @@ INNER_EOF
 
 # Test 6: Gateway mode health check
 log_test "Test 6: Gateway mode health check"
-./awesome-mcp-proxy -gateway > /tmp/mcp-gateway.log 2>&1 &
+./awesome-mcp-proxy gateway --use-default-config > /tmp/mcp-gateway.log 2>&1 &
 GATEWAY_PID=$!
 sleep 2
 
@@ -215,7 +215,7 @@ wait $GATEWAY_PID 2>/dev/null || true
 
 # Test 7: Gateway mode with default config
 log_test "Test 7: Gateway mode basic functionality"
-./awesome-mcp-proxy -gateway -addr :8889 > /tmp/mcp-gateway-8889.log 2>&1 &
+./awesome-mcp-proxy gateway --use-default-config -a :8889 > /tmp/mcp-gateway-8889.log 2>&1 &
 GATEWAY_PID=$!
 sleep 3
 

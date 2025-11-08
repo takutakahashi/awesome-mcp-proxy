@@ -1,0 +1,27 @@
+# Test configuration for E2E tests
+gateway:
+  host: "127.0.0.1"
+  port: 8889
+  endpoint: "/mcp"
+  timeout: 30s
+
+groups:
+  - name: "test-group"
+    backends:
+      test-backend:
+        name: "test-backend"
+        transport: "http"
+        endpoint: "http://localhost:3000/mcp"
+        headers:
+          X-Test-Header: "test-value"
+
+middleware:
+  logging:
+    enabled: true
+    level: "info"
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+  caching:
+    enabled: false
+    ttl: 60s

@@ -171,3 +171,92 @@ else
 fi
 
 log_info "All E2E tests completed"
+
+# Test 6: Config loading functionality
+log_test "Test 6: Config loading functionality"
+log_info "Building config test tool..."
+go build -o config-test ./cmd/config-test/ || {
+    log_error "Config test tool build failed"
+    TEST_FAILED=1
+}
+
+if [ $TEST_FAILED -eq 0 ]; then
+    # Test config loading with test config file
+    config_output=$(./config-test -config test/test-config.yaml 2>/dev/null)
+    
+    if echo "$config_output" | jq -e '.gateway.port == 8889' > /dev/null && \
+       echo "$config_output" | jq -e '.gateway.host == "127.0.0.1"' > /dev/null && \
+       echo "$config_output" | jq -e '.groups[0].name == "test-group"' > /dev/null; then
+        log_info "✓ Config loading test passed"
+    else
+        log_error "✗ Config loading test failed"
+        echo "Config output: $config_output"
+        TEST_FAILED=1
+    fi
+fi
+
+# Test 7: Config validation
+log_test "Test 7: Config validation"
+if [ $TEST_FAILED -eq 0 ]; then
+    # Create invalid config for testing validation
+    cat > /tmp/invalid-config.yaml << INNER_EOF
+gateway:
+  port: 99999  # Invalid port
+groups:
+  - name: ""     # Empty name should fail
+    backends:
+      test:
+        name: "test"
+        transport: "stdio"
+        # Missing command for stdio transport
+INNER_EOF
+
+    # This should fail
+    if ./config-test -config /tmp/invalid-config.yaml 2>/dev/null; then
+        log_error "✗ Config validation test failed (should have rejected invalid config)"
+        TEST_FAILED=1
+    else
+        log_info "✓ Config validation test passed (correctly rejected invalid config)"
+    fi
+    
+    rm -f /tmp/invalid-config.yaml
+fi
+
+# Test 8: Environment variable expansion
+log_test "Test 8: Environment variable expansion"
+if [ $TEST_FAILED -eq 0 ]; then
+    export TEST_TOKEN="secret-123"
+    export TEST_ENDPOINT="http://test-server:3000/mcp"
+    
+    # Create config with env vars
+    cat > /tmp/env-config.yaml << INNER_EOF
+gateway:
+  port: 8890
+groups:
+  - name: "env-test"
+    backends:
+      env-backend:
+        name: "env-backend"
+        transport: "http"
+        endpoint: "\${TEST_ENDPOINT}"
+        headers:
+          authorization: "Bearer \${TEST_TOKEN}"
+INNER_EOF
+
+    config_output=$(./config-test -config /tmp/env-config.yaml 2>/dev/null)
+    
+    if echo "$config_output" | jq -e '.groups[0].backends["env-backend"].endpoint == "http://test-server:3000/mcp"' > /dev/null && \
+       echo "$config_output" | jq -e '.groups[0].backends["env-backend"].headers.authorization == "Bearer secret-123"' > /dev/null; then
+        log_info "✓ Environment variable expansion test passed"
+    else
+        log_error "✗ Environment variable expansion test failed"
+        echo "Config output: $config_output"
+        TEST_FAILED=1
+    fi
+    
+    rm -f /tmp/env-config.yaml
+    unset TEST_TOKEN TEST_ENDPOINT
+fi
+
+# Cleanup test binaries
+rm -f config-test

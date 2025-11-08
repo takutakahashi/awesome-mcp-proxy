@@ -94,7 +94,7 @@ jobs:
         fi
 
     - name: Run security scan
-      uses: anchore/grype-action@v0.25.0
+      uses: anchore/grype-action@v0.9.1
       with:
         image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
         fail-build: false
@@ -122,7 +122,7 @@ jobs:
 
     - name: Generate SBOM
       if: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_to_registry != 'false') }}
-      uses: anchore/sbom-action@v0.15.9
+      uses: anchore/sbom-action@v0.14.3
       with:
         image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
         format: spdx-json
@@ -130,7 +130,7 @@ jobs:
 
     - name: Upload SBOM
       if: ${{ github.event_name != 'pull_request' && (github.event.inputs.push_to_registry != 'false') }}
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: sbom
         path: sbom.spdx.json

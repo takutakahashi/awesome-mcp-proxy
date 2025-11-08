@@ -1,0 +1,76 @@
+# Gateway Configuration Example based on Issue #2 Design
+gateway:
+  host: "0.0.0.0"
+  port: 8080
+  endpoint: "/mcp"
+  timeout: 30s
+
+groups:
+  - name: "developer"
+    backends:
+      git-tools:
+        name: "git-tools"
+        transport: "stdio"
+        command: "mcp-server-git"
+        args: ["--repo", "/workspace"]
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
+          
+      filesystem-tools:
+        name: "filesystem-tools"
+        transport: "http"
+        endpoint: "http://localhost:3001/mcp"
+        headers:
+          Authorization: "Bearer ${FILESYSTEM_TOKEN}"
+          
+      docker-tools:
+        name: "docker-tools"
+        transport: "stdio"
+        command: "mcp-docker"
+        env:
+          DOCKER_HOST: "${DOCKER_HOST}"
+
+  - name: "designer"
+    backends:
+      figma-tools:
+        name: "figma-tools"
+        transport: "http"
+        endpoint: "http://figma-mcp:3002/mcp"
+        headers:
+          X-Figma-Token: "${FIGMA_TOKEN}"
+          
+      asset-management:
+        name: "asset-management"
+        transport: "http"
+        endpoint: "http://assets-mcp:3003/mcp"
+        headers:
+          Authorization: "Bearer ${ASSETS_TOKEN}"
+
+  - name: "director"
+    backends:
+      project-management:
+        name: "project-management"
+        transport: "http"
+        endpoint: "http://pm-mcp:3005/mcp"
+        headers:
+          Authorization: "Bearer ${PM_TOKEN}"
+          
+      analytics-tools:
+        name: "analytics-tools"
+        transport: "http"
+        endpoint: "http://analytics-mcp:3006/mcp"
+        headers:
+          X-Analytics-Key: "${ANALYTICS_KEY}"
+
+middleware:
+  logging:
+    enabled: true
+    level: "info"
+    
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    
+  caching:
+    enabled: true
+    ttl: 300s

@@ -23,7 +23,7 @@ type GatewayConfig struct {
 }
 
 type Group struct {
-	Name     string            `yaml:"name" mapstructure:"name"`
+	Name     string             `yaml:"name" mapstructure:"name"`
 	Backends map[string]Backend `yaml:"backends" mapstructure:"backends"`
 }
 
@@ -130,22 +130,22 @@ func expandConfigEnvVars(config *Config) {
 			// Command, Endpoint, Args, Env, Headersの環境変数を展開
 			backend.Command = os.ExpandEnv(backend.Command)
 			backend.Endpoint = os.ExpandEnv(backend.Endpoint)
-			
+
 			// Argsの展開
 			for j, arg := range backend.Args {
 				backend.Args[j] = os.ExpandEnv(arg)
 			}
-			
+
 			// Envの展開
 			for key, value := range backend.Env {
 				backend.Env[key] = os.ExpandEnv(value)
 			}
-			
+
 			// Headersの展開
 			for key, value := range backend.Headers {
 				backend.Headers[key] = os.ExpandEnv(value)
 			}
-			
+
 			// 更新されたbackendを戻す
 			config.Groups[i].Backends[name] = backend
 		}

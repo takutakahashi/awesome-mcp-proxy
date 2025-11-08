@@ -191,7 +191,7 @@ groups:
 	expectedAuth := "Bearer secret-token-123"
 	// mapstructureはYAMLキーを小文字にする
 	actualAuth := backend.Headers["authorization"]
-	
+
 	if actualAuth != expectedAuth {
 		t.Errorf("Expected Authorization '%s', got '%s'", expectedAuth, actualAuth)
 	}

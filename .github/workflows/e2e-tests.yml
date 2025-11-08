@@ -1,0 +1,105 @@
+name: E2E Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to run tests against'
+        required: false
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+  push:
+    branches: [ main ]
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+    
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y curl jq
+    
+    - name: Download dependencies
+      run: go mod download
+    
+    - name: Build application
+      run: go build -o awesome-mcp-proxy .
+    
+    - name: Make E2E script executable
+      run: chmod +x test/e2e.sh
+    
+    - name: Run E2E tests
+      run: ./test/e2e.sh
+      env:
+        TEST_ENVIRONMENT: ${{ github.event.inputs.environment || 'ci' }}
+    
+    - name: Upload test logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: e2e-test-logs
+        path: |
+          /tmp/mcp-server.log
+          test/logs/
+        retention-days: 7
+    
+    - name: Generate test report
+      if: always()
+      run: |
+        echo "# E2E Test Report" >> $GITHUB_STEP_SUMMARY
+        echo "## Environment: ${{ github.event.inputs.environment || 'ci' }}" >> $GITHUB_STEP_SUMMARY
+        echo "## Test Results" >> $GITHUB_STEP_SUMMARY
+        if [ -f /tmp/mcp-server.log ]; then
+          echo "### Server Logs (Last 50 lines)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          tail -50 /tmp/mcp-server.log >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        fi
+    
+    - name: Notify on failure
+      if: failure() && github.ref == 'refs/heads/main'
+      uses: 8398a7/action-slack@v3
+      with:
+        status: failure
+        text: 'E2E tests failed on main branch'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  notify-completion:
+    needs: e2e-tests
+    runs-on: ubuntu-latest
+    if: always() && github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Notify completion
+      run: |
+        STATUS="${{ needs.e2e-tests.result }}"
+        if [ "$STATUS" = "success" ]; then
+          echo "✅ E2E tests completed successfully"
+        else
+          echo "❌ E2E tests failed"
+          exit 1
+        fi

@@ -1,0 +1,48 @@
+# Git files
+.git
+.gitignore
+.github/
+
+# Development files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Go build artifacts
+*.o
+*.so
+*.exe
+awesome-mcp-proxy
+
+# Test files and coverage reports
+coverage.out
+coverage.html
+*_test.go
+test/
+*.test
+
+# Documentation
+README.md
+CLAUDE.md
+docs/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+/tmp/
+*.temp

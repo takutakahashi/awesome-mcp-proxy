@@ -171,3 +171,74 @@ else
 fi
 
 log_info "All E2E tests completed"
+
+# Helper function to make MCP requests to specific port
+mcp_request_to_port() {
+    local method=$1
+    local params=$2
+    local id=${3:-1}
+    local port=${4:-8080}
+
+    local request=$(cat <<INNER_EOF
+{
+    "jsonrpc": "2.0",
+    "id": $id,
+    "method": "$method",
+    "params": $params
+}
+INNER_EOF
+)
+
+    curl -s -X POST "http://localhost:${port}/mcp" \
+        -H "Content-Type: application/json" \
+        -d "$request"
+}
+
+# Test 6: Gateway mode health check
+log_test "Test 6: Gateway mode health check"
+./awesome-mcp-proxy -gateway > /tmp/mcp-gateway.log 2>&1 &
+GATEWAY_PID=$!
+sleep 2
+
+health_response=$(curl -s http://localhost:8080/health || echo "{}")
+if echo "$health_response" | jq -e '.status == "healthy" and .mode == "gateway"' > /dev/null; then
+    log_info "✓ Gateway mode health check test passed"
+else
+    log_error "✗ Gateway mode health check test failed"
+    echo "Response: $health_response"
+    TEST_FAILED=1
+fi
+
+# Stop gateway server
+kill $GATEWAY_PID 2>/dev/null || true
+wait $GATEWAY_PID 2>/dev/null || true
+
+# Test 7: Gateway mode with default config
+log_test "Test 7: Gateway mode basic functionality"
+./awesome-mcp-proxy -gateway -addr :8889 > /tmp/mcp-gateway-8889.log 2>&1 &
+GATEWAY_PID=$!
+sleep 3
+
+# Test gateway initialize
+gateway_response=$(mcp_request_to_port "initialize" '{
+    "protocolVersion": "2024-11-05",
+    "capabilities": {},
+    "clientInfo": {
+        "name": "test-client",
+        "version": "1.0.0"
+    }
+}' 1 8889 | extract_result)
+
+if echo "$gateway_response" | jq -e '.result.serverInfo.name == "awesome-mcp-proxy"' > /dev/null; then
+    log_info "✓ Gateway initialize test passed"
+else
+    log_error "✗ Gateway initialize test failed"
+    echo "Response: $gateway_response"
+    TEST_FAILED=1
+fi
+
+# Stop gateway server
+kill $GATEWAY_PID 2>/dev/null || true
+wait $GATEWAY_PID 2>/dev/null || true
+
+log_info "All E2E tests completed (including Gateway mode)"

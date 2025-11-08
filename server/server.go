@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -177,4 +179,118 @@ func (s *MCPServer) registerPrompts() {
 // GetServer returns the underlying MCP server
 func (s *MCPServer) GetServer() *mcp.Server {
 	return s.server
+}
+
+// Gateway configuration structures
+
+type GatewayConfig struct {
+	Gateway    GatewaySettings  `yaml:"gateway"`
+	Groups     []Group          `yaml:"groups"`
+	Middleware MiddlewareConfig `yaml:"middleware"`
+}
+
+type GatewaySettings struct {
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	Endpoint string `yaml:"endpoint"`
+	Timeout  string `yaml:"timeout"`
+}
+
+type Group struct {
+	Name     string    `yaml:"name"`
+	Backends []Backend `yaml:"backends"`
+}
+
+type Backend struct {
+	Name      string            `yaml:"name"`
+	Transport string            `yaml:"transport"`
+	Command   string            `yaml:"command,omitempty"`
+	Args      []string          `yaml:"args,omitempty"`
+	Endpoint  string            `yaml:"endpoint,omitempty"`
+	Headers   map[string]string `yaml:"headers,omitempty"`
+	Env       map[string]string `yaml:"env,omitempty"`
+}
+
+type MiddlewareConfig struct {
+	Logging LoggingConfig `yaml:"logging"`
+	CORS    CORSConfig    `yaml:"cors"`
+	Caching CachingConfig `yaml:"caching"`
+}
+
+type LoggingConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Level   string `yaml:"level"`
+}
+
+type CORSConfig struct {
+	Enabled        bool     `yaml:"enabled"`
+	AllowedOrigins []string `yaml:"allowed_origins"`
+}
+
+type CachingConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	TTL     string `yaml:"ttl"`
+}
+
+// BackendRef represents a reference to a specific backend
+type BackendRef struct {
+	GroupName   string
+	BackendName string
+}
+
+// Gateway represents the MCP gateway/proxy
+type Gateway struct {
+	config       *GatewayConfig
+	groups       []Group
+	toolsMap     map[string]BackendRef
+	resourcesMap map[string]BackendRef
+	promptsMap   map[string]BackendRef
+	backends     map[string]BackendConnection
+	cache        *Cache
+	mu           sync.RWMutex
+}
+
+// BackendConnection represents a connection to a backend MCP server
+type BackendConnection interface {
+	Initialize() error
+	ListTools() ([]Tool, error)
+	ListResources() ([]Resource, error)
+	ListPrompts() ([]Prompt, error)
+	CallTool(name string, arguments map[string]interface{}) (interface{}, error)
+	ReadResource(uri string) (interface{}, error)
+	GetPrompt(name string, arguments map[string]interface{}) (interface{}, error)
+	Close() error
+}
+
+// Tool represents an MCP tool
+type Tool struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	InputSchema interface{} `json:"inputSchema"`
+}
+
+// Resource represents an MCP resource
+type Resource struct {
+	URI         string `json:"uri"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	MimeType    string `json:"mimeType,omitempty"`
+}
+
+// Prompt represents an MCP prompt
+type Prompt struct {
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Arguments   interface{} `json:"arguments,omitempty"`
+}
+
+// Cache represents a simple in-memory cache
+type Cache struct {
+	data map[string]CacheEntry
+	mu   sync.RWMutex
+}
+
+type CacheEntry struct {
+	Value     []byte
+	ExpiresAt time.Time
 }

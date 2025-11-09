@@ -184,9 +184,9 @@ if [ $TEST_FAILED -eq 0 ]; then
     # Test config loading with test config file
     config_output=$(./config-test -config test/test-config.yaml 2>/dev/null)
     
-    if echo "$config_output" | jq -e '.gateway.port == 8889' > /dev/null && \
-       echo "$config_output" | jq -e '.gateway.host == "127.0.0.1"' > /dev/null && \
-       echo "$config_output" | jq -e '.groups[0].name == "test-group"' > /dev/null; then
+    if echo "$config_output" | jq -e '.Gateway.Port == 8889' > /dev/null && \
+       echo "$config_output" | jq -e '.Gateway.Host == "127.0.0.1"' > /dev/null && \
+       echo "$config_output" | jq -e '.Groups[0].Name == "test-group"' > /dev/null; then
         log_info "✓ Config loading test passed"
     else
         log_error "✗ Config loading test failed"
@@ -245,8 +245,8 @@ INNER_EOF
 
     config_output=$(./config-test -config /tmp/env-config.yaml 2>/dev/null)
     
-    if echo "$config_output" | jq -e '.groups[0].backends["env-backend"].endpoint == "http://test-server:3000/mcp"' > /dev/null && \
-       echo "$config_output" | jq -e '.groups[0].backends["env-backend"].headers.authorization == "Bearer secret-123"' > /dev/null; then
+    if echo "$config_output" | jq -e '.Groups[0].Backends["env-backend"].Endpoint == "http://test-server:3000/mcp"' > /dev/null && \
+       echo "$config_output" | jq -e '.Groups[0].Backends["env-backend"].Headers.authorization == "Bearer secret-123"' > /dev/null; then
         log_info "✓ Environment variable expansion test passed"
     else
         log_error "✗ Environment variable expansion test failed"

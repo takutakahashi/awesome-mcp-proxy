@@ -48,41 +48,87 @@ MCP Server Gatewayは、複数のMCPサーバーへの統一されたアクセ�
 
 ## 必須機能の仕様
 
-### ツール機能の必須サポート
+### 動的Capability検出
 
-MCP Server Gatewayは、**最小限の実装として必ずツール（tools）のcapabilityをサポート**します。
+MCP Server Gatewayは、**起動時に全バックエンドの能力を検出し、動的にcapabilityを決定**します。
 
-#### 必須実装項目
+#### Capability集約ルール
 
-1. **initializeレスポンスでのtools capability宣言**
-   ```json
-   {
-     "jsonrpc": "2.0",
-     "id": 1,
-     "result": {
-       "protocolVersion": "2024-11-05",
-       "capabilities": {
-         "tools": {}  // 必須: tools capabilityは常に返す
-         // resources, promptsは任意
-       },
-       "serverInfo": {
-         "name": "mcp-gateway",
-         "version": "1.0.0"
-       }
-     }
-   }
-   ```
+1. **tools capability**: 
+   - **常にサポート**（必須）
+   - バックエンドが0個でも `"tools": {}` を返す
 
-2. **必須メソッドの実装**
-   - `initialize` - 初期化とcapability宣言（必須）
-   - `tools/list` - 利用可能なツール一覧の返却（必須）
-   - `tools/call` - ツールの実行（必須）
+2. **resources capability**:
+   - **1つでもバックエンドがサポートしていれば有効化**
+   - サポートするバックエンドがない場合は省略
 
-3. **オプショナルメソッド**
-   - `resources/list` - リソース一覧（バックエンドがサポートする場合のみ）
-   - `resources/read` - リソース読み取り（バックエンドがサポートする場合のみ）
-   - `prompts/list` - プロンプト一覧（バックエンドがサポートする場合のみ）
-   - `prompts/get` - プロンプト取得（バックエンドがサポートする場合のみ）
+3. **prompts capability**:
+   - **1つでもバックエンドがサポートしていれば有効化**
+   - サポートするバックエンドがない場合は省略
+
+#### 動的検出のアルゴリズム
+
+```go
+// Gateway起動時のcapability集約
+func (g *Gateway) discoverCapabilities() GatewayCapabilities {
+    capabilities := GatewayCapabilities{
+        Tools: true, // 必須: 常にサポート
+    }
+    
+    for _, group := range g.groups {
+        for _, backend := range group.Backends {
+            // 各バックエンドにinitializeを送信
+            initResp, err := backend.Initialize()
+            if err != nil {
+                log.Printf("Backend %s initialization failed: %v", backend.Name, err)
+                continue
+            }
+            
+            // 返されたcapabilityを統合
+            if initResp.Capabilities.Resources != nil {
+                capabilities.Resources = true
+            }
+            if initResp.Capabilities.Prompts != nil {
+                capabilities.Prompts = true
+            }
+        }
+    }
+    
+    return capabilities
+}
+```
+
+#### initializeレスポンス例
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2024-11-05",
+    "capabilities": {
+      "tools": {},     // 必須: 常に存在
+      "resources": {}, // バックエンドが1つでもサポートしていれば有効
+      "prompts": {}    // バックエンドが1つでもサポートしていれば有効
+    },
+    "serverInfo": {
+      "name": "mcp-gateway",
+      "version": "1.0.0"
+    }
+  }
+}
+```
+
+#### 必須メソッドと動的メソッド
+
+**必須メソッド**（常に実装）:
+- `initialize` - 初期化と動的capability宣言
+- `tools/list` - 利用可能なツール一覧の返却
+- `tools/call` - ツールの実行
+
+**動的メソッド**（バックエンドの能力に応じて有効化）:
+- `resources/list`, `resources/read` - 1つでもバックエンドがresourcesをサポートする場合
+- `prompts/list`, `prompts/get` - 1つでもバックエンドがpromptsをサポートする場合
 
 ### バックエンド不在時の挙動
 
@@ -207,21 +253,35 @@ sequenceDiagram
     Note over GW: Gateway起動
     GW->>RT: Initialize RoutingTable
     
-    loop 各バックエンド
+    par Capability Discovery
         GW->>B1: initialize
-        B1-->>GW: capabilities
+        B1-->>GW: {capabilities: {tools: {}, prompts: {}}}
         
         GW->>B1: tools/list
         B1-->>GW: [git_commit, git_status, ...]
         
-        GW->>B1: resources/list
-        B1-->>GW: [git://*, ...]
-        
         GW->>B1: prompts/list
         B1-->>GW: [code_review, ...]
+    and
+        GW->>B2: initialize
+        B2-->>GW: {capabilities: {tools: {}, resources: {}}}
         
-        GW->>RT: Register mappings<br/>(tools, resources, prompts)
+        GW->>B2: tools/list
+        B2-->>GW: [read_file, write_file, ...]
+        
+        GW->>B2: resources/list
+        B2-->>GW: [file://*, ...]
+    and
+        GW->>B3: initialize
+        B3-->>GW: {capabilities: {tools: {}}}
+        
+        GW->>B3: tools/list
+        B3-->>GW: [figma_export, ...]
     end
+    
+    Note over GW: 統合Capability決定:<br/>✅ tools (必須+全バックエンド対応)<br/>✅ resources (B2が対応)<br/>✅ prompts (B1が対応)
+    
+    GW->>RT: Register mappings<br/>(tools, resources, prompts)
     
     Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
 ```

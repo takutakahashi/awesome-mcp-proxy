@@ -54,9 +54,11 @@ MCP Server Gatewayは、**起動時に全バックエンドの能力を検出し
 
 #### Capability集約ルール
 
+**すべてのcapabilityが動的に決定**されます：
+
 1. **tools capability**: 
-   - **常にサポート**（必須）
-   - バックエンドが0個でも `"tools": {}` を返す
+   - **1つでもバックエンドがサポートしていれば有効化**
+   - サポートするバックエンドがない場合は省略
 
 2. **resources capability**:
    - **1つでもバックエンドがサポートしていれば有効化**
@@ -72,7 +74,7 @@ MCP Server Gatewayは、**起動時に全バックエンドの能力を検出し
 // Gateway起動時のcapability集約
 func (g *Gateway) discoverCapabilities() GatewayCapabilities {
     capabilities := GatewayCapabilities{
-        Tools: true, // 必須: 常にサポート
+        // すべて動的検出: バックエンドがサポートしていれば有効化
     }
     
     for _, group := range g.groups {
@@ -85,6 +87,9 @@ func (g *Gateway) discoverCapabilities() GatewayCapabilities {
             }
             
             // 返されたcapabilityを統合
+            if initResp.Capabilities.Tools != nil {
+                capabilities.Tools = true
+            }
             if initResp.Capabilities.Resources != nil {
                 capabilities.Resources = true
             }
@@ -107,8 +112,8 @@ func (g *Gateway) discoverCapabilities() GatewayCapabilities {
   "result": {
     "protocolVersion": "2024-11-05",
     "capabilities": {
-      "tools": {},     // 必須: 常に存在
-      "resources": {}, // バックエンドが1つでもサポートしていれば有効
+      "tools": {},     // バックエンドが1つでもサポートしていれば有効
+      "resources": {}, // バックエンドが1つでもサポートしていれば有効  
       "prompts": {}    // バックエンドが1つでもサポートしていれば有効
     },
     "serverInfo": {
@@ -119,26 +124,24 @@ func (g *Gateway) discoverCapabilities() GatewayCapabilities {
 }
 ```
 
-#### 必須メソッドと動的メソッド
+#### 動的メソッド
 
 **必須メソッド**（常に実装）:
 - `initialize` - 初期化と動的capability宣言
-- `tools/list` - 利用可能なツール一覧の返却
-- `tools/call` - ツールの実行
 
 **動的メソッド**（バックエンドの能力に応じて有効化）:
+- `tools/list`, `tools/call` - 1つでもバックエンドがtoolsをサポートする場合
 - `resources/list`, `resources/read` - 1つでもバックエンドがresourcesをサポートする場合
 - `prompts/list`, `prompts/get` - 1つでもバックエンドがpromptsをサポートする場合
 
 ### バックエンド不在時の挙動
 
-バックエンドが一つも利用できない場合でも、Gatewayは以下の応答を返します：
+バックエンドが一つも利用できない場合、Gatewayは以下の応答を返します：
 
-1. **`initialize`**: tools capabilityを含む正常なレスポンス
-2. **`tools/list`**: 空の配列 `{"tools": []}`
-3. **`tools/call`**: エラーレスポンス（ツールが見つからない）
+1. **`initialize`**: capability無しの正常なレスポンス `{"capabilities": {}}`
+2. **すべてのメソッド**: `{"error": {"code": -32601, "message": "Method not found"}}`
 
-これにより、クライアントは常にMCP準拠のレスポンスを受け取ることができます。
+バックエンドの能力に応じてcapabilityとメソッドが動的に決定されます。
 
 ## 技術仕様
 
@@ -279,7 +282,7 @@ sequenceDiagram
         B3-->>GW: [figma_export, ...]
     end
     
-    Note over GW: 統合Capability決定:<br/>✅ tools (必須+全バックエンド対応)<br/>✅ resources (B2が対応)<br/>✅ prompts (B1が対応)
+    Note over GW: 統合Capability決定:<br/>✅ tools (B1,B2,B3が対応)<br/>✅ resources (B2が対応)<br/>✅ prompts (B1が対応)
     
     GW->>RT: Register mappings<br/>(tools, resources, prompts)
     
@@ -358,7 +361,7 @@ sequenceDiagram
   - [ ] ルーティングテーブル構築
 - [ ] HTTPトランスポート実装
 - [ ] 基本的なリクエストルーティング
-- [ ] **必須: tools capability完全実装**
+- [ ] **動的capability検出実装**
 
 ### Phase 2: 高度な機能 (Week 3-4)
 - [ ] Stdioトランスポート実装
@@ -381,14 +384,14 @@ sequenceDiagram
 ### 実装の優先順位
 
 #### Phase 1（最優先）
-- ✅ **ツール機能の完全実装**
-  - `initialize` でtools capabilityを必ず返す
-  - `tools/list` で全バックエンドのツールを集約
-  - `tools/call` で適切なバックエンドへルーティング
+- ✅ **動的capability検出の完全実装**
+  - `initialize` でバックエンドの能力に基づいてcapabilityを決定
+  - すべてのメソッドを動的に有効化/無効化
+  - バックエンドがない場合の適切なエラー処理
 
 #### Phase 2
-- リソース機能のサポート（resources capability）
-- プロンプト機能のサポート（prompts capability）
+- 各capabilityの機能完全実装（tools, resources, prompts）
+- 集約とルーティング機構の最適化
 
 ## 成功指標
 
@@ -426,4 +429,4 @@ sequenceDiagram
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/specification)
 - [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
 - Issue #2: MCP Gateway/Proxy Configuration Management (Closed)
-- Issue #8: Feature: MCP Server Gateway - Single Endpoint Proxy Implementation
+- Issue #8: Feature: MCP Server Gateway - Single Endpoint Proxy Implementation (Closed)

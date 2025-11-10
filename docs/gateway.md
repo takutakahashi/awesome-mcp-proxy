@@ -1,0 +1,369 @@
+# MCP Server Gateway Specification
+
+## 概要
+
+MCP Server Gatewayは、複数のMCPサーバーへの統一されたアクセスポイントを提供する機能です。単一の `/mcp` エンドポイントを通じて、異なるバックエンドMCPサーバーが提供するツール、リソース、プロンプトに透過的にアクセスできるようにします。
+
+## 背景
+
+現在のawesome-mcp-proxyは、個別のMCPサーバーへのプロキシとして動作していますが、複数のMCPサーバーを統合して単一のエンドポイントから利用できる機能が必要です。これにより、クライアントは複数のバックエンドサーバーの存在を意識することなく、すべての機能にアクセスできるようになります。
+
+## 機能要件
+
+### 1. 統一エンドポイント
+- **単一のエンドポイント**: `/mcp` を通じてすべてのバックエンドMCPサーバーにアクセス
+- **透過的なルーティング**: クライアントはバックエンドサーバーの存在を意識しない
+- **自動的な振り分け**: リクエスト内容に基づいて適切なバックエンドサーバーを自動選択
+
+### 2. バックエンド管理
+- **複数のトランスポート方式をサポート**:
+  - HTTP/HTTPS
+  - stdio (標準入出力)
+  - WebSocket（将来的な拡張）
+- **動的なバックエンド登録**: 設定ファイルベースでのバックエンド管理
+- **ヘルスチェック**: バックエンドサーバーの可用性監視
+
+### 3. 能力ディスカバリー
+- **起動時の能力取得**: 各バックエンドサーバーの提供する機能を自動的に取得
+  - ツール一覧 (`tools/list`)
+  - リソース一覧 (`resources/list`)
+  - プロンプト一覧 (`prompts/list`)
+- **定期的な更新**: バックエンドの能力を定期的に再取得
+- **統合ルーティングテーブル**: すべてのバックエンドの能力を統合管理
+
+### 4. リクエストルーティング
+- **メソッドベースのルーティング**:
+  - `tools/call`: ツール名に基づいてバックエンドを選択
+  - `resources/read`: URIパターンに基づいてバックエンドを選択
+  - `prompts/get`: プロンプト名に基づいてバックエンドを選択
+- **リスト系メソッドの集約**:
+  - `tools/list`: 全バックエンドのツールを集約して返却
+  - `resources/list`: 全バックエンドのリソースを集約して返却
+  - `prompts/list`: 全バックエンドのプロンプトを集約して返却
+
+### 5. エラーハンドリング
+- **バックエンドエラーの処理**: 個別バックエンドの障害を適切に処理
+- **フォールバック機構**: 可能な場合は代替バックエンドへのフォールバック
+- **詳細なエラーレポート**: クライアントへの適切なエラー情報の提供
+
+## 必須機能の仕様
+
+### ツール機能の必須サポート
+
+MCP Server Gatewayは、**最小限の実装として必ずツール（tools）のcapabilityをサポート**します。
+
+#### 必須実装項目
+
+1. **initializeレスポンスでのtools capability宣言**
+   ```json
+   {
+     "jsonrpc": "2.0",
+     "id": 1,
+     "result": {
+       "protocolVersion": "2024-11-05",
+       "capabilities": {
+         "tools": {}  // 必須: tools capabilityは常に返す
+         // resources, promptsは任意
+       },
+       "serverInfo": {
+         "name": "mcp-gateway",
+         "version": "1.0.0"
+       }
+     }
+   }
+   ```
+
+2. **必須メソッドの実装**
+   - `initialize` - 初期化とcapability宣言（必須）
+   - `tools/list` - 利用可能なツール一覧の返却（必須）
+   - `tools/call` - ツールの実行（必須）
+
+3. **オプショナルメソッド**
+   - `resources/list` - リソース一覧（バックエンドがサポートする場合のみ）
+   - `resources/read` - リソース読み取り（バックエンドがサポートする場合のみ）
+   - `prompts/list` - プロンプト一覧（バックエンドがサポートする場合のみ）
+   - `prompts/get` - プロンプト取得（バックエンドがサポートする場合のみ）
+
+### バックエンド不在時の挙動
+
+バックエンドが一つも利用できない場合でも、Gatewayは以下の応答を返します：
+
+1. **`initialize`**: tools capabilityを含む正常なレスポンス
+2. **`tools/list`**: 空の配列 `{"tools": []}`
+3. **`tools/call`**: エラーレスポンス（ツールが見つからない）
+
+これにより、クライアントは常にMCP準拠のレスポンスを受け取ることができます。
+
+## 技術仕様
+
+### 設定ファイル構造
+
+```yaml
+gateway:
+  host: "0.0.0.0"
+  port: 8080
+  endpoint: "/mcp"
+  timeout: 30s
+
+groups:
+  - name: "developer"
+    backends:
+      git-tools:
+        name: "git-tools"
+        transport: "stdio"
+        command: "mcp-server-git"
+        args: ["--repo", "/workspace"]
+        env:
+          GITHUB_TOKEN: "${GITHUB_TOKEN}"
+          
+      filesystem-tools:
+        name: "filesystem-tools"
+        transport: "http"
+        endpoint: "http://localhost:3001/mcp"
+        headers:
+          Authorization: "Bearer ${FILESYSTEM_TOKEN}"
+          
+      docker-tools:
+        name: "docker-tools"
+        transport: "stdio"
+        command: "mcp-docker"
+        env:
+          DOCKER_HOST: "${DOCKER_HOST}"
+
+  - name: "designer"
+    backends:
+      figma-tools:
+        name: "figma-tools"
+        transport: "http"
+        endpoint: "http://figma-mcp:3002/mcp"
+        headers:
+          X-Figma-Token: "${FIGMA_TOKEN}"
+          
+      asset-management:
+        name: "asset-management"
+        transport: "http"
+        endpoint: "http://assets-mcp:3003/mcp"
+        headers:
+          Authorization: "Bearer ${ASSETS_TOKEN}"
+
+middleware:
+  logging:
+    enabled: true
+    level: "info"
+    
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    
+  caching:
+    enabled: true
+    ttl: 300s
+```
+
+### ルーティングテーブル構造
+
+```go
+type RoutingTable struct {
+    // ツール名 -> バックエンド名のマッピング
+    ToolsMap     map[string]string
+    
+    // リソースURIパターン -> バックエンド名のマッピング
+    ResourcesMap map[string]string
+    
+    // プロンプト名 -> バックエンド名のマッピング
+    PromptsMap   map[string]string
+    
+    // バックエンド名 -> Backend実装のマッピング
+    Backends     map[string]Backend
+}
+```
+
+### リクエストフロー
+
+```
+1. クライアントリクエスト受信 (/mcp)
+2. JSON-RPCメソッド解析
+3. ルーティング判定:
+   - tools/call -> ToolsMapを参照
+   - resources/read -> ResourcesMapを参照
+   - prompts/get -> PromptsMapを参照
+   - list系 -> 全バックエンドから集約
+4. バックエンドへのリクエスト転送
+5. レスポンスの返却
+```
+
+## シーケンス図
+
+### 1. 初期化シーケンス（起動時の能力ディスカバリー）
+
+```mermaid
+sequenceDiagram
+    participant GW as Gateway
+    participant RT as RoutingTable
+    participant B1 as Backend1<br/>(git-tools)
+    participant B2 as Backend2<br/>(filesystem)
+    participant B3 as Backend3<br/>(figma-tools)
+
+    Note over GW: Gateway起動
+    GW->>RT: Initialize RoutingTable
+    
+    loop 各バックエンド
+        GW->>B1: initialize
+        B1-->>GW: capabilities
+        
+        GW->>B1: tools/list
+        B1-->>GW: [git_commit, git_status, ...]
+        
+        GW->>B1: resources/list
+        B1-->>GW: [git://*, ...]
+        
+        GW->>B1: prompts/list
+        B1-->>GW: [code_review, ...]
+        
+        GW->>RT: Register mappings<br/>(tools, resources, prompts)
+    end
+    
+    Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
+```
+
+### 2. ツール実行のシーケンス (tools/call)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway
+    participant RT as RoutingTable
+    participant B as Backend<br/>(figma-tools)
+
+    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
+    
+    GW->>GW: Parse JSON-RPC
+    
+    GW->>RT: Lookup tool "figma_export"
+    RT-->>GW: backend: "figma-tools"
+    
+    GW->>B: Forward request<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
+    
+    B-->>GW: Response<br/>{result: {...}}
+    
+    GW-->>C: JSON-RPC Response<br/>{result: {...}}
+```
+
+### 3. ツール一覧取得のシーケンス (tools/list) - 集約パターン
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway
+    participant Cache as Cache
+    participant B1 as Backend1<br/>(git-tools)
+    participant B2 as Backend2<br/>(filesystem)
+    participant B3 as Backend3<br/>(figma-tools)
+
+    C->>GW: POST /mcp<br/>{method: "tools/list"}
+    
+    GW->>Cache: Check cache
+    
+    alt Cache Hit
+        Cache-->>GW: Cached tools list
+        GW-->>C: JSON-RPC Response<br/>{result: {tools: [...]}}
+    else Cache Miss
+        GW->>GW: Aggregate from all backends
+        
+        par Parallel requests
+            GW->>B1: tools/list
+            B1-->>GW: [git_commit, git_status]
+        and
+            GW->>B2: tools/list
+            B2-->>GW: [read_file, write_file]
+        and
+            GW->>B3: tools/list
+            B3-->>GW: [figma_export, figma_import]
+        end
+        
+        GW->>GW: Merge all tools
+        
+        GW->>Cache: Store in cache<br/>(TTL: 300s)
+        
+        GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  git_commit, git_status,<br/>  read_file, write_file,<br/>  figma_export, figma_import<br/>]}}
+    end
+```
+
+## 実装計画
+
+### Phase 1: コア機能 (Week 1-2)
+- [ ] Gatewayコア実装
+  - [ ] 設定ファイル読み込み
+  - [ ] バックエンド管理
+  - [ ] ルーティングテーブル構築
+- [ ] HTTPトランスポート実装
+- [ ] 基本的なリクエストルーティング
+- [ ] **必須: tools capability完全実装**
+
+### Phase 2: 高度な機能 (Week 3-4)
+- [ ] Stdioトランスポート実装
+- [ ] 能力ディスカバリー機能
+- [ ] リスト系メソッドの集約
+- [ ] キャッシング機構
+
+### Phase 3: 運用機能 (Week 5)
+- [ ] ヘルスチェック実装
+- [ ] メトリクス収集
+- [ ] ロギング強化
+- [ ] エラーハンドリング改善
+
+### Phase 4: テストと文書化 (Week 6)
+- [ ] 単体テスト
+- [ ] 統合テスト
+- [ ] E2Eテスト
+- [ ] ドキュメント作成
+
+### 実装の優先順位
+
+#### Phase 1（最優先）
+- ✅ **ツール機能の完全実装**
+  - `initialize` でtools capabilityを必ず返す
+  - `tools/list` で全バックエンドのツールを集約
+  - `tools/call` で適切なバックエンドへルーティング
+
+#### Phase 2
+- リソース機能のサポート（resources capability）
+- プロンプト機能のサポート（prompts capability）
+
+## 成功指標
+
+- **パフォーマンス**:
+  - レイテンシ: 直接アクセスと比較して10%以内の増加
+  - スループット: 100 req/s以上の処理能力
+  
+- **信頼性**:
+  - 可用性: 99.9%以上
+  - エラー率: 0.1%未満
+  
+- **スケーラビリティ**:
+  - 10以上のバックエンドサーバーをサポート
+  - 1000以上のツール/リソース/プロンプトの管理
+
+## 影響範囲
+
+- **既存機能への影響**: 既存のプロキシ機能と並行して動作可能
+- **互換性**: MCP仕様に完全準拠
+- **移行パス**: 段階的な移行が可能
+
+## リスクと対策
+
+### リスク1: バックエンドサーバーの障害
+- **対策**: ヘルスチェックと自動的な障害検出・隔離
+
+### リスク2: パフォーマンス劣化
+- **対策**: キャッシング機構とコネクションプーリング
+
+### リスク3: セキュリティ
+- **対策**: 適切な認証・認可機構の実装
+
+## 参考資料
+
+- [Model Context Protocol Specification](https://modelcontextprotocol.io/specification)
+- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
+- Issue #2: MCP Gateway/Proxy Configuration Management (Closed)
+- Issue #8: Feature: MCP Server Gateway - Single Endpoint Proxy Implementation

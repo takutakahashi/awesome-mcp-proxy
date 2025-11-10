@@ -33,11 +33,11 @@ MCP Server Gatewayは、複数のMCPサーバーへの統一されたアクセ�
 
 ### 4. リクエストルーティング
 - **メソッドベースのルーティング**:
-  - `tools/call`: ツール名に基づいてバックエンドを選択
+  - `tools/call`: **メタツール経由のみ** - 直接のツール名指定は禁止
   - `resources/read`: URIパターンに基づいてバックエンドを選択
   - `prompts/get`: プロンプト名に基づいてバックエンドを選択
 - **リスト系メソッドの集約**:
-  - `tools/list`: 全バックエンドのツールを集約して返却
+  - `tools/list`: **メタツールのみ提供** - 実ツールは `list_tools` 経由で取得
   - `resources/list`: 全バックエンドのリソースを集約して返却
   - `prompts/list`: 全バックエンドのプロンプトを集約して返却
 
@@ -130,13 +130,15 @@ func (g *Gateway) discoverCapabilities() GatewayCapabilities {
 - `initialize` - 初期化と動的capability宣言
 
 **動的メソッド**（バックエンドの能力に応じて有効化）:
-- `tools/list`, `tools/call` - 1つでもバックエンドがtoolsをサポートする場合
+- `tools/list`, `tools/call` - 1つでもバックエンドがtoolsをサポートする場合（**メタツール経由のみ**）
 - `resources/list`, `resources/read` - 1つでもバックエンドがresourcesをサポートする場合  
 - `prompts/list`, `prompts/get` - 1つでもバックエンドがpromptsをサポートする場合
 
 ### メタツール仕様
 
 Gatewayは**コンテキスト圧縮を防ぐため**、tools capabilityが有効な場合に以下の3つのメタツールのみを提供します：
+
+**重要**: **すべてのツール実行はメタツール経由で行う必要があります**。直接の `tools/call` でバックエンドツールを呼び出すことは禁止されています。
 
 #### 1. `list_tools` ツール
 - **目的**: バックエンドから利用可能なツールの名前一覧を取得
@@ -165,6 +167,18 @@ Gatewayは**コンテキスト圧縮を防ぐため**、tools capabilityが有�
 ```
 
 この設計により、クライアントは必要な時に必要な情報のみを取得でき、MCPセッションのコンテキストサイズを最適化できます。
+
+#### 直接ツール呼び出しの禁止
+
+**重要な制約**: 
+
+- **禁止**: `{"method": "tools/call", "params": {"name": "git_commit", ...}}` のような直接ツール呼び出し
+- **必須**: `{"method": "tools/call", "params": {"name": "call_tool", "arguments": {"tool_name": "git_commit", ...}}}` のようなメタツール経由での呼び出し
+
+この制約により、Gatewayは以下の動作を行います：
+
+1. `tools/call` で直接バックエンドツール名が指定された場合 → エラー応答
+2. `tools/call` でメタツール名（`list_tools`, `describe_tool`, `call_tool`）が指定された場合 → 正常処理
 
 #### メタツール実装例
 
@@ -324,100 +338,8 @@ type RoutingTable struct {
    - resources/read -> ResourcesMapを参照
    - prompts/get -> PromptsMapを参照
    - list系 -> メタツール提供 or 全バックエンドから集約
-4. バックエンドへのリクエスト転送
+4. バックエンドへのリクエスト転送（メタツール経由のみ）
 5. レスポンスの返却
-```
-
-## シーケンス図
-
-### 1. 初期化シーケンス（起動時の能力ディスカバリー）
-
-```mermaid
-sequenceDiagram
-    participant GW as Gateway
-    participant RT as RoutingTable
-    participant B1 as Backend1<br/>(git-tools)
-    participant B2 as Backend2<br/>(filesystem)
-    participant B3 as Backend3<br/>(figma-tools)
-
-    Note over GW: Gateway起動
-    GW->>RT: Initialize RoutingTable
-    
-    par Capability Discovery
-        GW->>B1: initialize
-        B1-->>GW: {capabilities: {tools: {}, prompts: {}}}
-        
-        GW->>B1: tools/list
-        B1-->>GW: [git_commit, git_status, ...]
-        
-        GW->>B1: prompts/list
-        B1-->>GW: [code_review, ...]
-    and
-        GW->>B2: initialize
-        B2-->>GW: {capabilities: {tools: {}, resources: {}}}
-        
-        GW->>B2: tools/list
-        B2-->>GW: [read_file, write_file, ...]
-        
-        GW->>B2: resources/list
-        B2-->>GW: [file://*, ...]
-    and
-        GW->>B3: initialize
-        B3-->>GW: {capabilities: {tools: {}}}
-        
-        GW->>B3: tools/list
-        B3-->>GW: [figma_export, ...]
-    end
-    
-    Note over GW: 統合Capability決定:<br/>✅ tools (B1,B2,B3が対応)<br/>✅ resources (B2が対応)<br/>✅ prompts (B1が対応)
-    
-    GW->>RT: Register mappings<br/>(tools, resources, prompts)
-    
-    Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
-```
-
-### 2. メタツール使用のシーケンス
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as Gateway
-    participant RT as RoutingTable
-    participant B1 as Backend1<br/>(git-tools)
-    participant B2 as Backend2<br/>(filesystem)
-
-    Note over C: メタツールを使ったワークフロー
-    
-    C->>GW: tools/call<br/>{name: "list_tools"}
-    GW-->>C: ["git_commit", "read_file", ...]
-    
-    C->>GW: tools/call<br/>{name: "describe_tool",<br/>arguments: {"tool_name": "git_commit"}}
-    GW->>RT: Lookup "git_commit"
-    RT-->>GW: backend: "git-tools"
-    GW->>B1: tools/list (get full definition)
-    B1-->>GW: tool definition
-    GW-->>C: tool description & schema
-    
-    C->>GW: tools/call<br/>{name: "call_tool",<br/>arguments: {<br/>  "tool_name": "git_commit",<br/>  "arguments": {"message": "fix bug"}<br/>}}
-    GW->>RT: Lookup "git_commit"
-    RT-->>GW: backend: "git-tools"
-    GW->>B1: tools/call<br/>{name: "git_commit",<br/>arguments: {"message": "fix bug"}}
-    B1-->>GW: execution result
-    GW-->>C: tool execution result
-```
-
-### 3. ツール一覧取得のシーケンス (tools/list) - メタツール提供
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as Gateway
-
-    C->>GW: POST /mcp<br/>{method: "tools/list"}
-    
-    Note over GW: メタツールのみ提供<br/>（コンテキスト圧縮防止）
-    
-    GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  {name: "list_tools", ...},<br/>  {name: "describe_tool", ...},<br/>  {name: "call_tool", ...}<br/>]}}
 ```
 
 ## 実装計画
@@ -430,6 +352,7 @@ sequenceDiagram
 - [ ] HTTPトランスポート実装
 - [ ] 基本的なリクエストルーティング
 - [ ] **メタツールシステム実装**
+- [ ] **直接ツール呼び出し禁止機構**
 
 ### Phase 2: 高度な機能 (Week 3-4)
 - [ ] Stdioトランスポート実装
@@ -455,7 +378,8 @@ sequenceDiagram
 - ✅ **メタツールシステムの完全実装**
   - `list_tools`, `describe_tool`, `call_tool` の3つのメタツール
   - `tools/list` でメタツールのみ提供
-  - 実ツールは `call_tool` 経由でアクセス
+  - **すべての実ツールは `call_tool` 経由でアクセス**
+  - **直接ツール呼び出しの完全禁止**
 
 #### Phase 2
 - 各capabilityの機能完全実装（tools, resources, prompts）
@@ -478,11 +402,16 @@ sequenceDiagram
 - **コンテキスト効率**:
   - メタツール使用によるコンテキストサイズ削減: 80%以上
 
+- **セキュリティ**:
+  - 直接ツール呼び出し阻止率: 100%
+  - メタツール経由でのみツール実行: 100%
+
 ## 影響範囲
 
 - **既存機能への影響**: 既存のプロキシ機能と並行して動作可能
 - **互換性**: MCP仕様に完全準拠、メタツールによるコンテキスト最適化
 - **移行パス**: 段階的な移行が可能
+- **破壊的変更**: 直接ツール呼び出しが不可能になる（設計上の意図）
 
 ## リスクと対策
 
@@ -497,6 +426,9 @@ sequenceDiagram
 
 ### リスク4: メタツール使用の複雑さ
 - **対策**: 明確なドキュメントと使用例の提供
+
+### リスク5: 既存クライアントの互換性
+- **対策**: メタツール移行ガイドと段階的移行パスの提供
 
 ## 参考資料
 

@@ -46,53 +46,7 @@ sequenceDiagram
     Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
 ```
 
-## 2. ツール実行のシーケンス (tools/call) - 直接ツール実行
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as Gateway
-    participant RT as RoutingTable
-    participant B as Backend<br/>(figma-tools)
-
-    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
-    
-    GW->>GW: Parse JSON-RPC
-    
-    GW->>RT: Lookup tool "figma_export"
-    RT-->>GW: backend: "figma-tools"
-    
-    GW->>B: Forward request<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
-    
-    B-->>GW: Response<br/>{result: {...}}
-    
-    GW-->>C: JSON-RPC Response<br/>{result: {...}}
-```
-
-## 3. リソース読み取りのシーケンス (resources/read)
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant GW as Gateway
-    participant RT as RoutingTable
-    participant B as Backend<br/>(filesystem)
-
-    C->>GW: POST /mcp<br/>{method: "resources/read",<br/>params: {uri: "file:///workspace/test.txt"}}
-    
-    GW->>GW: Parse JSON-RPC
-    
-    GW->>RT: Match URI pattern<br/>"file:///workspace/test.txt"
-    RT-->>GW: backend: "filesystem"
-    
-    GW->>B: Forward request<br/>{method: "resources/read",<br/>params: {uri: "file:///workspace/test.txt"}}
-    
-    B-->>GW: Response<br/>{result: {contents: "..."}}
-    
-    GW-->>C: JSON-RPC Response<br/>{result: {contents: "..."}}
-```
-
-## 4. ツール一覧取得のシーケンス (tools/list) - メタツール提供
+## 2. ツール一覧取得のシーケンス (tools/list) - メタツール提供
 
 ```mermaid
 sequenceDiagram
@@ -106,7 +60,7 @@ sequenceDiagram
     GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  {name: "list_tools", ...},<br/>  {name: "describe_tool", ...},<br/>  {name: "call_tool", ...}<br/>]}}
 ```
 
-## 5. メタツール使用のシーケンス
+## 3. メタツール使用のシーケンス（完全なワークフロー）
 
 ```mermaid
 sequenceDiagram
@@ -117,7 +71,7 @@ sequenceDiagram
     participant B2 as Backend2<br/>(filesystem)
     participant Cache as Cache
 
-    Note over C: メタツールを使ったワークフロー
+    Note over C: メタツール必須ワークフロー
     
     C->>GW: tools/call<br/>{name: "list_tools"}
     
@@ -155,6 +109,45 @@ sequenceDiagram
     GW-->>C: tool execution result
 ```
 
+## 4. 直接ツール呼び出し拒否のシーケンス
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway
+
+    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "git_commit", ...}}
+    
+    Note over GW: 直接ツール呼び出し検出<br/>❌ 禁止されたアクセスパターン
+    
+    GW-->>C: JSON-RPC Error<br/>{error: {<br/>  code: -32601,<br/>  message: "Direct tool access forbidden. Use meta-tools: call_tool"<br/>}}
+    
+    Note over C: メタツール経由で再試行が必要
+```
+
+## 5. リソース読み取りのシーケンス (resources/read)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway
+    participant RT as RoutingTable
+    participant B as Backend<br/>(filesystem)
+
+    C->>GW: POST /mcp<br/>{method: "resources/read",<br/>params: {uri: "file:///workspace/test.txt"}}
+    
+    GW->>GW: Parse JSON-RPC
+    
+    GW->>RT: Match URI pattern<br/>"file:///workspace/test.txt"
+    RT-->>GW: backend: "filesystem"
+    
+    GW->>B: Forward request<br/>{method: "resources/read",<br/>params: {uri: "file:///workspace/test.txt"}}
+    
+    B-->>GW: Response<br/>{result: {contents: "..."}}
+    
+    GW-->>C: JSON-RPC Response<br/>{result: {contents: "..."}}
+```
+
 ## 6. エラーハンドリングのシーケンス
 
 ```mermaid
@@ -165,9 +158,9 @@ sequenceDiagram
     participant B1 as Backend1<br/>(Primary)
     participant B2 as Backend2<br/>(Fallback)
 
-    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "process_data"}}
+    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "call_tool", arguments: {...}}}
     
-    GW->>RT: Lookup tool "process_data"
+    GW->>RT: Lookup tool in arguments
     RT-->>GW: backend: "backend1"
     
     GW->>B1: Forward request

@@ -131,8 +131,95 @@ func (g *Gateway) discoverCapabilities() GatewayCapabilities {
 
 **動的メソッド**（バックエンドの能力に応じて有効化）:
 - `tools/list`, `tools/call` - 1つでもバックエンドがtoolsをサポートする場合
-- `resources/list`, `resources/read` - 1つでもバックエンドがresourcesをサポートする場合
+- `resources/list`, `resources/read` - 1つでもバックエンドがresourcesをサポートする場合  
 - `prompts/list`, `prompts/get` - 1つでもバックエンドがpromptsをサポートする場合
+
+### メタツール仕様
+
+Gatewayは**コンテキスト圧縮を防ぐため**、tools capabilityが有効な場合に以下の3つのメタツールのみを提供します：
+
+#### 1. `list_tools` ツール
+- **目的**: バックエンドから利用可能なツールの名前一覧を取得
+- **引数**: なし
+- **戻り値**: ツール名の配列 `["tool1", "tool2", ...]`
+
+#### 2. `describe_tool` ツール  
+- **目的**: 指定したツールの詳細情報（説明、引数仕様）を取得
+- **引数**: 
+  - `tool_name` (string, required): 詳細を取得したいツール名
+- **戻り値**: ツールの完全な定義情報（description、inputSchema等）
+
+#### 3. `call_tool` ツール
+- **目的**: 実際のツール実行を行う
+- **引数**:
+  - `tool_name` (string, required): 実行するツール名
+  - `arguments` (object, required): ツールに渡す引数（JSON形式）
+- **戻り値**: ツール実行結果
+
+#### メタツールによる実行フロー
+
+```
+1. list_tools → ツール名一覧を取得
+2. describe_tool → 特定ツールの詳細取得
+3. call_tool → 実際のツール実行
+```
+
+この設計により、クライアントは必要な時に必要な情報のみを取得でき、MCPセッションのコンテキストサイズを最適化できます。
+
+#### メタツール実装例
+
+```json
+// tools/list のレスポンス（メタツールのみ）
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "list_tools",
+        "description": "バックエンドから利用可能なツール名一覧を取得",
+        "inputSchema": {
+          "type": "object",
+          "properties": {},
+          "required": []
+        }
+      },
+      {
+        "name": "describe_tool", 
+        "description": "指定したツールの詳細情報を取得",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tool_name": {
+              "type": "string",
+              "description": "詳細を取得したいツール名"
+            }
+          },
+          "required": ["tool_name"]
+        }
+      },
+      {
+        "name": "call_tool",
+        "description": "実際のツール実行を行う", 
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "tool_name": {
+              "type": "string",
+              "description": "実行するツール名"
+            },
+            "arguments": {
+              "type": "object",
+              "description": "ツールに渡す引数（JSON形式）"
+            }
+          },
+          "required": ["tool_name", "arguments"]
+        }
+      }
+    ]
+  }
+}
+```
 
 ### バックエンド不在時の挙動
 
@@ -233,10 +320,10 @@ type RoutingTable struct {
 1. クライアントリクエスト受信 (/mcp)
 2. JSON-RPCメソッド解析
 3. ルーティング判定:
-   - tools/call -> ToolsMapを参照
+   - tools/call -> メタツールかチェック、call_toolなら実ツールにルーティング
    - resources/read -> ResourcesMapを参照
    - prompts/get -> PromptsMapを参照
-   - list系 -> 全バックエンドから集約
+   - list系 -> メタツール提供 or 全バックエンドから集約
 4. バックエンドへのリクエスト転送
 5. レスポンスの返却
 ```
@@ -289,85 +376,112 @@ sequenceDiagram
     Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
 ```
 
-### 2. ツール実行のシーケンス (tools/call)
+### 2. メタツール使用のシーケンス
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant GW as Gateway
     participant RT as RoutingTable
-    participant B as Backend<br/>(figma-tools)
+    participant B1 as Backend1<br/>(git-tools)
+    participant B2 as Backend2<br/>(filesystem)
 
-    C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
+    Note over C: メタツールを使ったワークフロー
     
-    GW->>GW: Parse JSON-RPC
+    C->>GW: tools/call<br/>{name: "list_tools"}
+    GW-->>C: ["git_commit", "read_file", ...]
     
-    GW->>RT: Lookup tool "figma_export"
-    RT-->>GW: backend: "figma-tools"
+    C->>GW: tools/call<br/>{name: "describe_tool",<br/>arguments: {"tool_name": "git_commit"}}
+    GW->>RT: Lookup "git_commit"
+    RT-->>GW: backend: "git-tools"
+    GW->>B1: tools/list (get full definition)
+    B1-->>GW: tool definition
+    GW-->>C: tool description & schema
     
-    GW->>B: Forward request<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
-    
-    B-->>GW: Response<br/>{result: {...}}
-    
-    GW-->>C: JSON-RPC Response<br/>{result: {...}}
+    C->>GW: tools/call<br/>{name: "call_tool",<br/>arguments: {<br/>  "tool_name": "git_commit",<br/>  "arguments": {"message": "fix bug"}<br/>}}
+    GW->>RT: Lookup "git_commit"
+    RT-->>GW: backend: "git-tools"
+    GW->>B1: tools/call<br/>{name: "git_commit",<br/>arguments: {"message": "fix bug"}}
+    B1-->>GW: execution result
+    GW-->>C: tool execution result
 ```
 
-### 3. ツール一覧取得のシーケンス (tools/list) - 集約パターン
+### 3. ツール一覧取得のシーケンス (tools/list) - メタツール提供
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant GW as Gateway
-    participant Cache as Cache
-    participant B1 as Backend1<br/>(git-tools)
-    participant B2 as Backend2<br/>(filesystem)
-    participant B3 as Backend3<br/>(figma-tools)
 
     C->>GW: POST /mcp<br/>{method: "tools/list"}
     
-    GW->>Cache: Check cache
+    Note over GW: メタツールのみ提供<br/>（コンテキスト圧縮防止）
     
-    alt Cache Hit
-        Cache-->>GW: Cached tools list
-        GW-->>C: JSON-RPC Response<br/>{result: {tools: [...]}}
-    else Cache Miss
-        GW->>GW: Aggregate from all backends
-        
-        par Parallel requests
-            GW->>B1: tools/list
-            B1-->>GW: [git_commit, git_status]
-        and
-            GW->>B2: tools/list
-            B2-->>GW: [read_file, write_file]
-        and
-            GW->>B3: tools/list
-            B3-->>GW: [figma_export, figma_import]
-        end
-        
-        GW->>GW: Merge all tools
-        
-        GW->>Cache: Store in cache<br/>(TTL: 300s)
-        
-        GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  git_commit, git_status,<br/>  read_file, write_file,<br/>  figma_export, figma_import<br/>]}}
-    end
+    GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  {name: "list_tools", ...},<br/>  {name: "describe_tool", ...},<br/>  {name: "call_tool", ...}<br/>]}}
 ```
+
+## 実装計画
+
+### Phase 1: コア機能 (Week 1-2)
+- [ ] Gatewayコア実装
+  - [ ] 設定ファイル読み込み
+  - [ ] バックエンド管理
+  - [ ] ルーティングテーブル構築
+- [ ] HTTPトランスポート実装
+- [ ] 基本的なリクエストルーティング
+- [ ] **メタツールシステム実装**
+
+### Phase 2: 高度な機能 (Week 3-4)
+- [ ] Stdioトランスポート実装
+- [ ] 能力ディスカバリー機能
+- [ ] リスト系メソッドの集約
+- [ ] キャッシング機構
+
+### Phase 3: 運用機能 (Week 5)
+- [ ] ヘルスチェック実装
+- [ ] メトリクス収集
+- [ ] ロギング強化
+- [ ] エラーハンドリング改善
+
+### Phase 4: テストと文書化 (Week 6)
+- [ ] 単体テスト
+- [ ] 統合テスト
+- [ ] E2Eテスト
+- [ ] ドキュメント作成
 
 ### 実装の優先順位
 
 #### Phase 1（最優先）
-- ✅ **動的capability検出の完全実装**
-  - `initialize` でバックエンドの能力に基づいてcapabilityを決定
-  - すべてのメソッドを動的に有効化/無効化
-  - バックエンドがない場合の適切なエラー処理
+- ✅ **メタツールシステムの完全実装**
+  - `list_tools`, `describe_tool`, `call_tool` の3つのメタツール
+  - `tools/list` でメタツールのみ提供
+  - 実ツールは `call_tool` 経由でアクセス
 
 #### Phase 2
 - 各capabilityの機能完全実装（tools, resources, prompts）
 - 集約とルーティング機構の最適化
 
+## 成功指標
+
+- **パフォーマンス**:
+  - レイテンシ: 直接アクセスと比較して10%以内の増加
+  - スループット: 100 req/s以上の処理能力
+  
+- **信頼性**:
+  - 可用性: 99.9%以上
+  - エラー率: 0.1%未満
+  
+- **スケーラビリティ**:
+  - 10以上のバックエンドサーバーをサポート
+  - 1000以上のツール/リソース/プロンプトの管理
+  
+- **コンテキスト効率**:
+  - メタツール使用によるコンテキストサイズ削減: 80%以上
+
 ## 影響範囲
 
 - **既存機能への影響**: 既存のプロキシ機能と並行して動作可能
-- **互換性**: MCP仕様に完全準拠
+- **互換性**: MCP仕様に完全準拠、メタツールによるコンテキスト最適化
 - **移行パス**: 段階的な移行が可能
 
 ## リスクと対策
@@ -380,6 +494,9 @@ sequenceDiagram
 
 ### リスク3: セキュリティ
 - **対策**: 適切な認証・認可機構の実装
+
+### リスク4: メタツール使用の複雑さ
+- **対策**: 明確なドキュメントと使用例の提供
 
 ## 参考資料
 

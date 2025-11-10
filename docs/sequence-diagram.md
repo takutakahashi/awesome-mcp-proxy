@@ -13,26 +13,40 @@ sequenceDiagram
     Note over GW: Gateway起動
     GW->>RT: Initialize RoutingTable
     
-    loop 各バックエンド
+    par Capability Discovery
         GW->>B1: initialize
-        B1-->>GW: capabilities
+        B1-->>GW: {capabilities: {tools: {}, prompts: {}}}
         
         GW->>B1: tools/list
         B1-->>GW: [git_commit, git_status, ...]
         
-        GW->>B1: resources/list
-        B1-->>GW: [git://*, ...]
-        
         GW->>B1: prompts/list
         B1-->>GW: [code_review, ...]
+    and
+        GW->>B2: initialize
+        B2-->>GW: {capabilities: {tools: {}, resources: {}}}
         
-        GW->>RT: Register mappings<br/>(tools, resources, prompts)
+        GW->>B2: tools/list
+        B2-->>GW: [read_file, write_file, ...]
+        
+        GW->>B2: resources/list
+        B2-->>GW: [file://*, ...]
+    and
+        GW->>B3: initialize
+        B3-->>GW: {capabilities: {tools: {}}}
+        
+        GW->>B3: tools/list
+        B3-->>GW: [figma_export, ...]
     end
+    
+    Note over GW: 統合Capability決定:<br/>✅ tools (B1,B2,B3が対応)<br/>✅ resources (B2が対応)<br/>✅ prompts (B1が対応)
+    
+    GW->>RT: Register mappings<br/>(tools, resources, prompts)
     
     Note over RT: ルーティングテーブル構築完了<br/>toolsMap: {<br/>  "git_commit": "git-tools",<br/>  "read_file": "filesystem",<br/>  "figma_export": "figma-tools"<br/>}
 ```
 
-## 2. ツール実行のシーケンス (tools/call)
+## 2. ツール実行のシーケンス (tools/call) - 直接ツール実行
 
 ```mermaid
 sequenceDiagram
@@ -40,7 +54,6 @@ sequenceDiagram
     participant GW as Gateway
     participant RT as RoutingTable
     participant B as Backend<br/>(figma-tools)
-    participant Cache as Cache
 
     C->>GW: POST /mcp<br/>{method: "tools/call",<br/>params: {name: "figma_export"}}
     
@@ -79,47 +92,70 @@ sequenceDiagram
     GW-->>C: JSON-RPC Response<br/>{result: {contents: "..."}}
 ```
 
-## 4. ツール一覧取得のシーケンス (tools/list) - 集約パターン
+## 4. ツール一覧取得のシーケンス (tools/list) - メタツール提供
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant GW as Gateway
-    participant Cache as Cache
-    participant B1 as Backend1<br/>(git-tools)
-    participant B2 as Backend2<br/>(filesystem)
-    participant B3 as Backend3<br/>(figma-tools)
 
     C->>GW: POST /mcp<br/>{method: "tools/list"}
+    
+    Note over GW: メタツールのみ提供<br/>（コンテキスト圧縮防止）
+    
+    GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  {name: "list_tools", ...},<br/>  {name: "describe_tool", ...},<br/>  {name: "call_tool", ...}<br/>]}}
+```
+
+## 5. メタツール使用のシーケンス
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as Gateway
+    participant RT as RoutingTable
+    participant B1 as Backend1<br/>(git-tools)
+    participant B2 as Backend2<br/>(filesystem)
+    participant Cache as Cache
+
+    Note over C: メタツールを使ったワークフロー
+    
+    C->>GW: tools/call<br/>{name: "list_tools"}
     
     GW->>Cache: Check cache
     
     alt Cache Hit
         Cache-->>GW: Cached tools list
-        GW-->>C: JSON-RPC Response<br/>{result: {tools: [...]}}
     else Cache Miss
-        GW->>GW: Aggregate from all backends
-        
         par Parallel requests
             GW->>B1: tools/list
             B1-->>GW: [git_commit, git_status]
         and
-            GW->>B2: tools/list
+            GW->>B2: tools/list  
             B2-->>GW: [read_file, write_file]
-        and
-            GW->>B3: tools/list
-            B3-->>GW: [figma_export, figma_import]
         end
         
-        GW->>GW: Merge all tools
-        
+        GW->>GW: Aggregate tool names
         GW->>Cache: Store in cache<br/>(TTL: 300s)
-        
-        GW-->>C: JSON-RPC Response<br/>{result: {tools: [<br/>  git_commit, git_status,<br/>  read_file, write_file,<br/>  figma_export, figma_import<br/>]}}
     end
+    
+    GW-->>C: ["git_commit", "read_file", ...]
+    
+    C->>GW: tools/call<br/>{name: "describe_tool",<br/>arguments: {"tool_name": "git_commit"}}
+    GW->>RT: Lookup "git_commit"
+    RT-->>GW: backend: "git-tools"
+    GW->>B1: tools/list (get full definition)
+    B1-->>GW: tool definition
+    GW-->>C: tool description & schema
+    
+    C->>GW: tools/call<br/>{name: "call_tool",<br/>arguments: {<br/>  "tool_name": "git_commit",<br/>  "arguments": {"message": "fix bug"}<br/>}}
+    GW->>RT: Lookup "git_commit"
+    RT-->>GW: backend: "git-tools"
+    GW->>B1: tools/call<br/>{name: "git_commit",<br/>arguments: {"message": "fix bug"}}
+    B1-->>GW: execution result
+    GW-->>C: tool execution result
 ```
 
-## 5. エラーハンドリングのシーケンス
+## 6. エラーハンドリングのシーケンス
 
 ```mermaid
 sequenceDiagram
@@ -154,7 +190,7 @@ sequenceDiagram
     end
 ```
 
-## 6. 並行バックエンド初期化シーケンス
+## 7. 並行バックエンド初期化シーケンス
 
 ```mermaid
 sequenceDiagram
@@ -192,7 +228,7 @@ sequenceDiagram
     Note over GW: All backends initialized<br/>Gateway ready to serve
 ```
 
-## 7. 動的バックエンド更新シーケンス
+## 8. 動的バックエンド更新シーケンス
 
 ```mermaid
 sequenceDiagram

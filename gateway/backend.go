@@ -117,7 +117,7 @@ func (b *HTTPBackend) sendJSONRPC(ctx context.Context, method string, params int
 		b.setHealthy(false)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		b.setHealthy(false)
@@ -313,10 +313,10 @@ func (b *StdioBackend) Close() error {
 	defer b.mu.Unlock()
 
 	if b.stdin != nil {
-		b.stdin.Close()
+		_ = b.stdin.Close()
 	}
 	if b.stdout != nil {
-		b.stdout.Close()
+		_ = b.stdout.Close()
 	}
 	if b.cmd != nil && b.cmd.Process != nil {
 		_ = b.cmd.Process.Kill()

@@ -251,9 +251,10 @@ func TestGateway_MultipleGroups(t *testing.T) {
 	var hasHTTP, hasStdio bool
 	for _, backend := range backends {
 		info := backend.GetInfo()
-		if info.Transport == "http" {
+		switch info.Transport {
+		case "http":
 			hasHTTP = true
-		} else if info.Transport == "stdio" {
+		case "stdio":
 			hasStdio = true
 		}
 	}

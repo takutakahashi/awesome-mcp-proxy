@@ -46,7 +46,7 @@ func runGateway(addr, configPath string) {
 	if err != nil {
 		log.Fatalf("Failed to create gateway: %v", err)
 	}
-	defer gatewayServer.Close()
+	defer func() { _ = gatewayServer.Close() }()
 
 	// Initialize gateway
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

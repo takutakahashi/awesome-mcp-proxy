@@ -1,0 +1,28 @@
+gateway:
+  host: "127.0.0.1"
+  port: 8889
+  endpoint: "/mcp"
+  timeout: 30s
+
+groups:
+  - name: "test-group"
+    backends:
+      standalone-server:
+        name: "standalone-server"
+        transport: "http"
+        endpoint: "http://localhost:8887/mcp"
+        headers:
+          content-type: "application/json"
+
+middleware:
+  logging:
+    enabled: true
+    level: "info"
+    
+  cors:
+    enabled: true
+    allowed_origins: ["*"]
+    
+  caching:
+    enabled: false
+    ttl: 300s

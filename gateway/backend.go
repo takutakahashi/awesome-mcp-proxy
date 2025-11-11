@@ -19,16 +19,16 @@ import (
 type Backend interface {
 	// Initialize sends the initialize request to the backend
 	Initialize(ctx context.Context, req interface{}) (*mcp.InitializeResult, error)
-	
+
 	// SendRequest sends an arbitrary JSON-RPC request to the backend
 	SendRequest(ctx context.Context, method string, params interface{}) (*json.RawMessage, error)
-	
+
 	// GetInfo returns backend information
 	GetInfo() BackendInfo
-	
+
 	// Close closes the backend connection
 	Close() error
-	
+
 	// IsHealthy returns the health status of the backend
 	IsHealthy() bool
 }
@@ -106,7 +106,7 @@ func (b *HTTPBackend) sendJSONRPC(ctx context.Context, method string, params int
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
-	
+
 	// Set custom headers
 	for key, value := range b.config.Headers {
 		httpReq.Header.Set(key, value)
@@ -223,7 +223,7 @@ func (b *StdioBackend) start() error {
 	}
 
 	b.cmd = exec.Command(b.config.Command, b.config.Args...)
-	
+
 	// Set environment variables
 	if len(b.config.Env) > 0 {
 		env := b.cmd.Environ()
@@ -319,8 +319,8 @@ func (b *StdioBackend) Close() error {
 		b.stdout.Close()
 	}
 	if b.cmd != nil && b.cmd.Process != nil {
-		b.cmd.Process.Kill()
-		b.cmd.Wait()
+		_ = b.cmd.Process.Kill()
+		_ = b.cmd.Wait()
 	}
 	return nil
 }
@@ -354,7 +354,7 @@ func NewBackendManager() *BackendManager {
 func (bm *BackendManager) AddBackend(backend Backend) {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
-	
+
 	info := backend.GetInfo()
 	bm.backends[info.Name] = backend
 }
@@ -363,7 +363,7 @@ func (bm *BackendManager) AddBackend(backend Backend) {
 func (bm *BackendManager) GetBackend(name string) (Backend, bool) {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
-	
+
 	backend, exists := bm.backends[name]
 	return backend, exists
 }
@@ -372,7 +372,7 @@ func (bm *BackendManager) GetBackend(name string) (Backend, bool) {
 func (bm *BackendManager) GetAllBackends() []Backend {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
-	
+
 	backends := make([]Backend, 0, len(bm.backends))
 	for _, backend := range bm.backends {
 		backends = append(backends, backend)
@@ -384,7 +384,7 @@ func (bm *BackendManager) GetAllBackends() []Backend {
 func (bm *BackendManager) GetHealthyBackends() []Backend {
 	bm.mu.RLock()
 	defer bm.mu.RUnlock()
-	
+
 	var backends []Backend
 	for _, backend := range bm.backends {
 		if backend.IsHealthy() {
@@ -398,7 +398,7 @@ func (bm *BackendManager) GetHealthyBackends() []Backend {
 func (bm *BackendManager) Close() error {
 	bm.mu.Lock()
 	defer bm.mu.Unlock()
-	
+
 	for _, backend := range bm.backends {
 		if err := backend.Close(); err != nil {
 			// Log error but continue closing others

@@ -121,7 +121,7 @@ func (cd *CapabilityDiscoverer) discoverTools(ctx context.Context, backend Backe
 	var toolsResponse struct {
 		Tools []mcp.Tool `json:"tools"`
 	}
-	
+
 	if err := json.Unmarshal(*response, &toolsResponse); err != nil {
 		return fmt.Errorf("failed to unmarshal tools response: %w", err)
 	}
@@ -148,7 +148,7 @@ func (cd *CapabilityDiscoverer) discoverResources(ctx context.Context, backend B
 	var resourcesResponse struct {
 		Resources []mcp.Resource `json:"resources"`
 	}
-	
+
 	if err := json.Unmarshal(*response, &resourcesResponse); err != nil {
 		return fmt.Errorf("failed to unmarshal resources response: %w", err)
 	}
@@ -175,7 +175,7 @@ func (cd *CapabilityDiscoverer) discoverPrompts(ctx context.Context, backend Bac
 	var promptsResponse struct {
 		Prompts []mcp.Prompt `json:"prompts"`
 	}
-	
+
 	if err := json.Unmarshal(*response, &promptsResponse); err != nil {
 		return fmt.Errorf("failed to unmarshal prompts response: %w", err)
 	}
@@ -201,7 +201,7 @@ func (cd *CapabilityDiscoverer) GetRoutingTable() *RoutingTable {
 func (rt *RoutingTable) FindToolBackend(toolName string) (string, bool) {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	backendName, exists := rt.ToolsMap[toolName]
 	return backendName, exists
 }
@@ -210,12 +210,12 @@ func (rt *RoutingTable) FindToolBackend(toolName string) (string, bool) {
 func (rt *RoutingTable) FindResourceBackend(resourceURI string) (string, bool) {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	// Exact match first
 	if backendName, exists := rt.ResourcesMap[resourceURI]; exists {
 		return backendName, true
 	}
-	
+
 	// Pattern matching could be implemented here for more complex URI matching
 	// For now, we use exact matching
 	return "", false
@@ -225,7 +225,7 @@ func (rt *RoutingTable) FindResourceBackend(resourceURI string) (string, bool) {
 func (rt *RoutingTable) FindPromptBackend(promptName string) (string, bool) {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	backendName, exists := rt.PromptsMap[promptName]
 	return backendName, exists
 }
@@ -234,7 +234,7 @@ func (rt *RoutingTable) FindPromptBackend(promptName string) (string, bool) {
 func (rt *RoutingTable) GetAllTools() []string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	tools := make([]string, 0, len(rt.ToolsMap))
 	for tool := range rt.ToolsMap {
 		tools = append(tools, tool)
@@ -246,7 +246,7 @@ func (rt *RoutingTable) GetAllTools() []string {
 func (rt *RoutingTable) GetAllResources() []string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	resources := make([]string, 0, len(rt.ResourcesMap))
 	for resource := range rt.ResourcesMap {
 		resources = append(resources, resource)
@@ -258,7 +258,7 @@ func (rt *RoutingTable) GetAllResources() []string {
 func (rt *RoutingTable) GetAllPrompts() []string {
 	rt.mu.RLock()
 	defer rt.mu.RUnlock()
-	
+
 	prompts := make([]string, 0, len(rt.PromptsMap))
 	for prompt := range rt.PromptsMap {
 		prompts = append(prompts, prompt)

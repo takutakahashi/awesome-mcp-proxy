@@ -61,7 +61,7 @@ func (mth *MetaToolHandler) GetMetaTools() []mcp.Tool {
 func (mth *MetaToolHandler) HandleListTools(ctx context.Context, request *mcp.CallToolRequest, params ListToolsParams) (*mcp.CallToolResult, interface{}, error) {
 	// Get all available tools from routing table
 	tools := mth.routingTable.GetAllTools()
-	
+
 	return &mcp.CallToolResult{
 		Content: []mcp.Content{
 			&mcp.TextContent{
@@ -115,7 +115,7 @@ func (mth *MetaToolHandler) HandleDescribeTool(ctx context.Context, request *mcp
 	var toolsResponse struct {
 		Tools []mcp.Tool `json:"tools"`
 	}
-	
+
 	if err := json.Unmarshal(*response, &toolsResponse); err != nil {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{

@@ -148,11 +148,11 @@ groups:
 
 func TestEnvVarExpansion(t *testing.T) {
 	// 環境変数のテスト
-	os.Setenv("TEST_TOKEN", "secret-token-123")
-	os.Setenv("TEST_PORT", "8888")
+	_ = os.Setenv("TEST_TOKEN", "secret-token-123")
+	_ = os.Setenv("TEST_PORT", "8888")
 	defer func() {
-		os.Unsetenv("TEST_TOKEN")
-		os.Unsetenv("TEST_PORT")
+		_ = os.Unsetenv("TEST_TOKEN")
+		_ = os.Unsetenv("TEST_PORT")
 	}()
 
 	tempDir := t.TempDir()
